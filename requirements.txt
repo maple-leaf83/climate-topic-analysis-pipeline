@@ -1,0 +1,22 @@
+# Python dependencies for "A Climate of Opinion" corpus pipeline
+# Install with: pip install -r requirements.txt
+#
+# System dependency (not pip):
+#   Ubuntu/Debian: sudo apt install poppler-utils
+#   macOS:         brew install poppler
+
+# ── Core pipeline ──────────────────────────────────────────────────────────────
+pandas>=2.0
+openpyxl>=3.1
+requests>=2.31
+tqdm>=4.66
+matplotlib>=3.8
+numpy>=1.26
+
+# ── BERTopic pipeline ─────────────────────────────────────────────────────────
+bertopic>=0.16
+sentence-transformers>=2.7
+umap-learn>=0.5
+hdbscan>=0.8
+scikit-learn>=1.4
+torch>=2.0           # CPU build is fine; for GPU install pytorch separately
