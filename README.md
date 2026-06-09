@@ -2,7 +2,7 @@
 
 Reproducible code for building the climate opinion corpus used in:
 
-> Santony, B. (in prep). *A Climate of Opinion: Framing and sentiment in Australian newspaper coverage of climate change, 1990–2025.* Environmental Communication.
+> Antony, B. (in prep). *A Climate of Opinion: Framing and sentiment in Australian newspaper coverage of climate change, 1990–2025.* Environmental Communication.
 
 ---
 
