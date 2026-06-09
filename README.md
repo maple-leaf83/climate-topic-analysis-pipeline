@@ -1,49 +1,49 @@
-# A Climate of Opinion — Corpus Construction Pipeline
+# A Climate of Opinion — Analysis Pipeline
 
-Reproducible code for building the climate opinion corpus used in:
+Reproducible code for the corpus construction and topic modelling pipeline used in:
 
-> Antony, B. (in prep). *A Climate of Opinion: Framing and sentiment in Australian newspaper coverage of climate change, 1990–2025.* Environmental Communication.
+> Antony, B. (in prep). *A Climate of Opinion: Climate Change Discourse Across Australian News Media, 1987–2026.*
 
 ---
 
 ## Overview
 
-This pipeline collects, parses, scores, and catalogues ~45,000 climate-related editorial and opinion articles from four Australian/Australian-edition newspapers (1990–2025). The final corpus contains **23,520 included articles** after applying the hybrid relevance criterion described below.
+This pipeline collects, parses, scores, and topic-models climate-related editorial and opinion articles from five English-language publications spanning 1987–2026:
 
-**Sources:**
 | Publication | Access method |
 |---|---|
-| Sydney Morning Herald | NewsBank (PDF export) |
-| The Age | NewsBank (PDF export) |
-| Canberra Times | NewsBank (PDF export) |
-| The Guardian (Australia) | Guardian Open Platform API |
+| The Guardian (Australian edition) | Guardian Open Platform API |
+| Sydney Morning Herald | NewsBank Australia (PDF export) |
+| The Age | NewsBank Australia (PDF export) |
+| The Canberra Times | NewsBank Australia (PDF export) |
+| The Australian | NewsBank Australia (PDF export) |
+
+The final corpus contains **27,563** editorial and opinion articles and **1,238** letters to the editor after relevance screening.
+
+> **Note:** Article body text is not included in this repository due to NewsBank and Guardian licensing restrictions. The pipeline scripts are provided for transparency and reproducibility; to run them you will need your own NewsBank access and a Guardian API key.
 
 ---
 
-## Repository structure
+## Pipeline
+
+The pipeline runs in five steps:
 
 ```
-repo/
-├── config.py               # All paths, API keys, thresholds, folder definitions
-├── fetch_guardian.py       # Guardian API fetcher
-├── parse_newsbank.py       # NewsBank multi-article PDF parser
-├── score_and_classify.py   # Relevance scoring + hybrid criterion
-├── build_catalogue.py      # Master pipeline orchestrator
-├── build_excel.py          # Review workbook builder
-├── make_figures.py         # Figures 2a/b/c
-├── requirements.txt
-└── README.md
+1. fetch_guardian.py          →  guardian_articles.csv
+2. [manual] download NewsBank PDFs
+3. cache_bodies.py            →  newsbank_bodies.parquet
+4. build_articles_scored.py   →  data/articles_scored.csv
+5. run_bertopic.py            →  data/combined-no-letters/topic_assignments.csv
+                                  data/letters/topic_assignments.csv
 ```
-
-Output files are written to `data/` and `figures/` (created automatically).
-
-> **Note:** Article body text is not included in this repository due to copyright restrictions. The catalogue CSV contains metadata only (title, author, date, publication, word count, relevance scores).
 
 ---
 
 ## Setup
 
 ### 1. Install system dependency
+
+`parse_newsbank.py` calls `pdftotext` (part of `poppler-utils`) to extract text from NewsBank PDF exports. Install it before running the pipeline:
 
 ```bash
 # Ubuntu/Debian
@@ -63,7 +63,7 @@ pip install -r requirements.txt
 
 Edit `config.py`:
 
-- Set `NEWSBANK_ROOT` to the directory containing your downloaded PDF folders (e.g. `../PDFs/`).
+- Set `NEWSBANK_ROOT` to the directory containing your downloaded NewsBank PDF folders.
 - Set `GUARDIAN_API_KEY` to your Guardian Open Platform API key (see below).
 
 #### Obtaining a Guardian API key
@@ -71,7 +71,7 @@ Edit `config.py`:
 The Guardian Open Platform provides free API access for non-commercial and research use.
 
 1. Register at https://open-platform.theguardian.com/access/
-2. Select **Developer** tier (free, up to 500 calls/day — sufficient for this pipeline).
+2. Select the **Developer** tier (free; up to 500 calls/day, sufficient for this pipeline).
 3. You will receive a key by email within a few minutes.
 4. Paste the key into `config.py`:
 
@@ -79,51 +79,61 @@ The Guardian Open Platform provides free API access for non-commercial and resea
 GUARDIAN_API_KEY = "your-key-here"
 ```
 
-> **Important:** never commit your API key to version control. If you fork this repository, add `config.py` to your local `.gitignore` or store the key in an environment variable and read it with `os.environ.get("GUARDIAN_API_KEY")`.
+> **Important:** never commit your API key to version control. If you fork this repository, store the key in an environment variable and read it with `os.environ.get("GUARDIAN_API_KEY")`.
 
 ---
 
 ## Running the pipeline
 
-### Full pipeline (fresh)
+### Step 1 — Fetch Guardian articles
 
 ```bash
-python build_catalogue.py
+python fetch_guardian.py
 ```
 
-This will:
-1. Parse all configured NewsBank PDF folders
-2. Fetch Guardian articles from the API
-3. Merge, deduplicate, and score all articles
-4. Write `data/article_catalogue.csv`
+Queries the Guardian Open Platform API and writes `guardian_articles.csv`. Run once; re-run to update to the current date.
 
-### Skip PDF parsing (use cached CSV)
+### Step 2 — Download NewsBank PDFs (manual)
+
+Log in to [NewsBank Australia](https://infoweb.newsbank.com) and export PDF bundles for each publication and content category as configured in `NEWSBANK_FOLDERS` in `config.py`. Place the folders under `NEWSBANK_ROOT`.
+
+### Step 3 — Cache NewsBank body text
 
 ```bash
-python build_catalogue.py --skip-newsbank
+python cache_bodies.py
 ```
 
-### Skip Guardian API (use cached CSV)
+Parses all NewsBank PDFs using `pdftotext` and writes body text to `data/newsbank_bodies.parquet` (or `.pkl.gz` if pyarrow is unavailable). Run with `--force` to rebuild from scratch.
+
+### Step 4 — Build scored article catalogue
 
 ```bash
-python build_catalogue.py --skip-guardian
+python build_articles_scored.py
 ```
 
-### Build Excel review workbook
+Merges Guardian and NewsBank sources, applies the relevance criterion, assigns content-type classifications, and writes `data/articles_scored.csv`.
+
+### Step 5 — Run BERTopic topic modelling
 
 ```bash
-python build_excel.py
+# Fit model on editorial corpus (excluding letters)
+python run_bertopic.py --corpus combined --exclude-letters
+
+# Project letters into the fitted topic space
+python run_bertopic.py --corpus combined --exclude-letters --transform-only
 ```
 
-Writes a three-sheet workbook to `data/article_catalogue_review.xlsx`.
+Outputs `data/combined-no-letters/topic_assignments.csv` and `data/letters/topic_assignments.csv`.
 
-### Generate figures
+Key options:
 
-```bash
-python make_figures.py
-```
-
-Writes `figures/fig2a_articles_by_source.pdf` etc.
+| Flag | Default | Description |
+|---|---|---|
+| `--embedding-model` | `nomic-ai/nomic-embed-text-v1` | Sentence embedding model |
+| `--min-topic-size` | `50` | Minimum cluster size |
+| `--outlier-strategy` | `embeddings` | Outlier reassignment method |
+| `--outlier-threshold` | `0.5` | Cosine similarity threshold for reassignment |
+| `--device` | `auto` | `cpu` or `cuda` |
 
 ---
 
@@ -135,19 +145,30 @@ An article is **included** if **any** of the following hold:
 |---|---|
 | (a) High direct frequency | `cc_count + gw_count ≥ 3` |
 | (b) Title hit | Title contains "climate change" or "global warming" |
-| (c) Broad climate coverage | `cc_count + gw_count ≥ 1` AND `climate_mentions ≥ 4` |
+| (c) Broad climate vocabulary | `cc_count + gw_count ≥ 1` AND `climate_mentions ≥ 4` |
 
-Where `cc_count` = occurrences of "climate change", `gw_count` = "global warming", and `climate_mentions` = total occurrences of any term in the 45-term `CLIMATE_TERMS` vocabulary (configured in `config.py`).
+`climate_mentions` counts occurrences of any term in the 47-term `CLIMATE_TERMS` vocabulary defined in `config.py`.
 
 ---
 
-## NewsBank folder structure
+## Repository structure
 
-NewsBank PDFs should be placed in subfolders of `NEWSBANK_ROOT`, matching the keys in `NEWSBANK_FOLDERS` in `config.py`. Each folder maps to a publication and content type. Subfolders one level deep are traversed automatically (e.g. `CT_opinion/pre2012`).
-
-Two header formats are handled automatically:
-- **Standard** (post ~2010): includes an `Author:` field
-- **Legacy CT** (pre ~2012): `Section:` field only, no `Author:` line
+```
+repo/
+├── config.py                  # Paths, API keys, thresholds, folder definitions
+├── fetch_guardian.py          # Step 1: Guardian API fetcher
+├── parse_newsbank.py          # NewsBank PDF parser (called by cache_bodies)
+├── cache_bodies.py            # Step 3: NewsBank body text cache builder
+├── score_and_classify.py      # Relevance scoring logic (called by build_articles_scored)
+├── build_articles_scored.py   # Step 4: scored article catalogue builder
+├── run_bertopic.py            # Step 5: BERTopic topic modelling pipeline
+├── analyse_clusters.py        # Deep-dive visualisations per topic group
+├── outlet_topic_attention.py  # Binomial representation analysis across outlets
+├── make_figures.py            # Corpus overview figures
+├── make_prisma.py             # PRISMA flow diagram
+├── requirements.txt
+└── README.md
+```
 
 ---
 
@@ -159,5 +180,5 @@ If you use this pipeline, please cite the paper above and link to this repositor
 
 ## Licence
 
-Code: MIT  
+Code: MIT
 Article content: not included (subject to NewsBank and Guardian licensing terms)
