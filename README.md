@@ -27,7 +27,7 @@ Overall, Australian climate opinion journalism is predominantly mediated through
 
 Reproducible code for the corpus construction and topic modelling pipeline used in:
 
-> Antony, B. (in prep). *A Climate of Opinion: Climate Change Discourse Across Australian News Media, 1987–2026.*
+> Antony, B. (in prep). *Climate Change Discourse Across Australian News Media, 1987–2026.*
 
 ---
 
