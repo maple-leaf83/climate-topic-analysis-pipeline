@@ -1,5 +1,33 @@
 # A Climate of Opinion — Analysis Pipeline
 
+---
+
+## Climate Change Discourse Across Australian News Media, 1987–2026
+
+**Bhavna J. Antony, Cameron Foale, Savin Chand**
+
+*Institute of Innovation, Science and Sustainability, Federation University Australia*
+
+### Abstract
+
+Despite an extensive literature on climate change news coverage, the long-form opinion and editorial journalism through which public arguments about climate policy are actively constructed has received comparatively little computational attention, particularly in the Australian context. This paper presents a longitudinal analysis of climate opinion discourse across five major English-language publications, comprising 28,801 articles from *The Guardian* (Australian edition), *The Age*, the *Sydney Morning Herald*, *The Canberra Times*, and *The Australian* spanning the period 1987 to 2026. Thematic structure was identified using BERTopic, a neural topic modelling framework combining contextual sentence embeddings and density-based clustering. The pipeline recovered 75 coherent topics grouped into 11 thematic categories. Differential topic attention was assessed using binomial representation ratios and z-scores. Letters to the editor (*n* = 1,238) were projected into the fitted topic space and treated as a sixth analytical unit alongside the five editorial corpora. The results revealed structural patterns. *The Guardian* is substantially over-represented in globally oriented groups including Energy Transition & Technology, Climate Science, and International Negotiations & Geopolitics, while the four Australian mastheads concentrate their coverage in Australian Politics & Policy. Overall, the climate change discourse predominantly occurs in conjunction with politics, while the science, impacts and technological innovations that could alleviate the effects of climate change do not get much attention. These findings provide the first computational characterisation of Australian climate opinion journalism at scale and document systematic outlet-level differences in thematic emphasis not reducible to differences in corpus size.
+
+---
+
+### Key Results
+
+![Outlet attention by topic group](figures/cluster_analysis/outlet_topic_attention_dotplot-1.png)
+
+*Binomial effect sizes (z-score, square-root transformed axis) for each outlet–topic-group combination. Filled triangles indicate significant over- (▶, z > 2) or under-representation (◀, z < −2) relative to the outlet's corpus share; open squares indicate no significant deviation (|z| ≤ 2). Rows sorted by Guardian z-score, descending.*
+
+The outlet–topic structure reveals a near-perfect institutional partition. The four Australian mastheads concentrate their commentary heavily in Australian Politics & Policy (*The Australian*: r = 3.74; *The Age*: r = 3.40; *SMH*: r = 3.41; *Canberra Times*: r = 2.47), while *The Guardian* is equivalently under-represented in that group (r = 0.18). The direction reverses for almost every globally oriented theme: *The Guardian* is significantly over-represented in Energy Transition & Technology, Climate Science, Nature, Ecosystems & Food Systems, Fossil Fuels, Divestment & Carbon Markets, and International Negotiations — not merely because it dominates the corpus (73.2% share), but after standardising for that share via binomial representation ratios.
+
+Letters to the editor constitute a distinct discursive voice. They are strongly over-represented in Australian Energy, Water & Resources (r = 4.99) and Australian Politics & Policy (r = 2.24), and systematically absent from globally oriented groups — suggesting that citizen engagement in this corpus is oriented toward immediate domestic energy and governance questions rather than international climate diplomacy or science.
+
+Overall, Australian climate opinion journalism is predominantly mediated through a political lens. The science, physical impacts, and technological dimensions of climate change receive comparatively little sustained attention outside *The Guardian*, a pattern that persists across nearly four decades and is not reducible to differences in outlet size.
+
+---
+
 Reproducible code for the corpus construction and topic modelling pipeline used in:
 
 > Antony, B. (in prep). *A Climate of Opinion: Climate Change Discourse Across Australian News Media, 1987–2026.*
