@@ -82,22 +82,30 @@ PUB_COLORS = ["#2166ac", "#4dac26", "#d6604d", "#8073ac", "#e08214", "#e6ab02", 
 PUB_COLOR  = dict(zip(PUB_ORDER, PUB_COLORS))
 
 # ── Thematic group assignments ─────────────────────────────────────────────────
-# 75-topic model. Noise topics T02, T13, T24 are not assigned to any group.
-GROUPS = {
-    "Australian politics & policy":             [0, 14, 16, 47, 51, 69],
-    "Australian energy, water & resources":     [17, 25, 31, 70],
-    "International negotiations & geopolitics": [3, 22, 26, 46, 49, 50, 60, 71, 73],
-    "Climate science":                          [15, 20, 33, 40, 56],
-    "Climate scepticism & denial":              [4],
-    "Climate impacts & extreme weather":        [7, 8, 18, 43, 58, 59],
-    "Nature, ecosystems & food systems":        [1, 21, 30, 34, 35, 36, 41, 44, 65, 68, 72],
-    "US & UK politics":                         [6, 10, 32, 54, 61, 67],
-    "Energy transition & technology":           [9, 11, 12, 23, 27, 29, 38, 39, 42, 55, 63, 64, 66],
-    "Fossil fuels, divestment & carbon markets":[5, 19, 53, 62, 74],
-    "Activism & social movements":              [28, 37, 45, 48, 52, 57],
-}
-# Reverse lookup (noise topics T02, T13, T24 map to None)
-TOPIC_TO_GROUP = {tid: grp for grp, tids in GROUPS.items() for tid in tids}
+# Populated at runtime from the topic_group column in topic_assignments.csv.
+# Do not edit this dict — update topic_group_mapping.csv instead.
+GROUPS: dict[str, list[int]] = {}
+NOISE_GROUPS: set[str] = {"Noise"}
+
+
+def build_groups(df: pd.DataFrame) -> dict[str, list[int]]:
+    """
+    Derive the group → [topic_id, …] mapping from the 'topic_group' column
+    in the assignments dataframe. Noise rows are excluded.
+    Raises ValueError if the column is absent (run_bertopic + update mapping first).
+    """
+    if "topic_group" not in df.columns:
+        raise ValueError(
+            "'topic_group' column not found in topic_assignments.csv.\n"
+            "Run the topic-group mapping update script before plotting."
+        )
+    active = df[
+        df["topic_group"].notna() & ~df["topic_group"].isin(NOISE_GROUPS)
+    ]
+    return {
+        grp: sorted(active[active["topic_group"] == grp]["topic_id"].unique().tolist())
+        for grp in active["topic_group"].unique()
+    }
 
 # ── Data loading ───────────────────────────────────────────────────────────────
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -434,17 +442,14 @@ def plot_cluster_deepdive(df: pd.DataFrame, summary: pd.DataFrame,
 # MODE 5a: CORPUS BUBBLE CHART — all topics as packed circles
 # ══════════════════════════════════════════════════════════════════════════════
 GROUP_COLORS = {
-    "Australian politics & policy":             "#e41a1c",
-    "Australian energy, water & resources":     "#ff7f00",
-    "International negotiations & geopolitics": "#377eb8",
-    "Climate science":                          "#4daf4a",
-    "Climate scepticism & denial":              "#a65628",
-    "Climate impacts & extreme weather":        "#006d2c",
-    "Nature, ecosystems & food systems":        "#17becf",
-    "US & UK politics":                         "#f768a1",
-    "Energy transition & technology":           "#984ea3",
-    "Fossil fuels, divestment & carbon markets":"#f781bf",
-    "Activism & social movements":              "#e6ab02",
+    "Australian Politics & Policy":             "#e41a1c",
+    "Nature, Ecosystems & Food Systems":        "#17becf",
+    "Energy Transition & Technology":           "#984ea3",
+    "US & UK Politics":                         "#f768a1",
+    "Fossil Fuels, Divestment & Carbon Markets":"#ff7f00",
+    "Climate Science":                          "#4daf4a",
+    "International Negotiations & Geopolitics": "#377eb8",
+    "Activism & Social Movements":              "#e6ab02",
 }
 
 
@@ -664,15 +669,18 @@ def parse_args():
 def main():
     args = parse_args()
 
+    print("Loading data…")
+    df, summary = load_data()
+    print(f"  {len(df):,} articles, {df['topic_id'].nunique()} topics\n")
+
+    # Build group mapping from the topic_group column (avoids hardcoding)
+    GROUPS.update(build_groups(df))
+
     if args.list_groups:
         print("Available thematic groups:")
         for name, tids in GROUPS.items():
             print(f"  '{name}'  →  topics {tids}")
         sys.exit(0)
-
-    print("Loading data…")
-    df, summary = load_data()
-    print(f"  {len(df):,} articles, {df['topic_id'].nunique()} topics\n")
 
     mode = args.mode
 
@@ -711,7 +719,7 @@ def main():
         plot_all_keyword_bubbles(summary)
 
     if mode == "all":
-        print("\nGenerating deep-dives for all 11 thematic groups…")
+        print(f"\nGenerating deep-dives for all {len(GROUPS)} thematic groups…")
         for grp_name, tids in GROUPS.items():
             print(f"  {grp_name}")
             plot_cluster_deepdive(df, summary, tids, grp_name)

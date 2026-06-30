@@ -259,6 +259,8 @@ def fit_bertopic(docs: list, min_topic_size: int = 50, nr_topics=None,
         embedding_model_path, device=device,
         local_files_only=True,
         model_kwargs={"torch_dtype": "float16"},   # fp16 halves activation memory
+        prompts={"clustering": "clustering: "},
+        default_prompt_name="clustering",
     )
 
     umap_model = UMAP(
@@ -732,6 +734,8 @@ def transform_letters(catalogue: pd.DataFrame,
         embedding_model_path, device=device,
         local_files_only=True,
         model_kwargs={"torch_dtype": "float16"},
+        prompts={"clustering": "clustering: "},
+        default_prompt_name="clustering",
     )
 
     # Check for a cached letters embedding (convenient when rerunning)
@@ -1021,10 +1025,7 @@ if __name__ == "__main__":
         default="both",
         help="Which corpus to run. 'combined' fits one model on all opinion/analysis.",
     )
-    parser.add_argument(
-        "--exclude-au-news", action="store_true",
-        help="Exclude Guardian Australia news section (keep Opinion + Environment only)",
-    )
+    
     parser.add_argument(
         "--min-topic-size", type=int, default=50, metavar="N",
         help="Min cluster size for Guardian corpus (default: 50)",
@@ -1112,7 +1113,6 @@ if __name__ == "__main__":
         nr_topics=args.nr_topics,
         device=args.device,
         exclude_letters=args.exclude_letters,
-        exclude_au_news=args.exclude_au_news,
         embedding_model_path=args.embedding_model,
         batch_size=args.batch_size,
         transform_only=args.transform_only,
