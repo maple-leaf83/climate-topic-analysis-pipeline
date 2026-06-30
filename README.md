@@ -1,8 +1,5 @@
-# A Climate of Opinion — Analysis Pipeline
 
----
-
-## Climate Change Discourse Across Australian News Media, 1987–2026
+# Climate Change Discourse Across Australian News Media, 1987–2026
 
 **Bhavna J. Antony, Cameron Foale, Savin Chand**
 
