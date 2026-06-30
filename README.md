@@ -13,7 +13,7 @@ Despite an extensive literature on climate change news coverage, the long-form o
 
 ### Key Results
 
-![Outlet attention by topic group](figures/cluster_analysis/outlet_topic_attention_dotplot-1.png)
+![Outlet attention by topic group](outlet_topic_attention_dotplot-1.png)
 
 *Binomial effect sizes (z-score, square-root transformed axis) for each outlet–topic-group combination. Filled triangles indicate significant over- (▶, z > 2) or under-representation (◀, z < −2) relative to the outlet's corpus share; open squares indicate no significant deviation (|z| ≤ 2). Rows sorted by Guardian z-score, descending.*
 
