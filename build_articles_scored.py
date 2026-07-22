@@ -193,13 +193,26 @@ def apply_exclusions(df: pd.DataFrame) -> pd.DataFrame:
     # Articles failing the body-length gate are forced to Exclude regardless of title.
     print("[score] Applying relevance criterion …")
     import re
-    from config import CLIMATE_TERMS, CC_GW_THRESHOLD, CLIMATE_MENTIONS_THRESHOLD
+    from config import (CLIMATE_TERMS, CORE_CLIMATE_PHRASES,
+                        CC_CORE_THRESHOLD, CLIMATE_MENTIONS_THRESHOLD)
 
+    # Single pattern matching any core climate identifier (word-boundary aware).
+    # Covers canonical phrases, contemporary equivalents, scientific mechanism terms,
+    # policy mechanisms, and international framework terms — see config.py.
+    _core_pat = re.compile(
+        "|".join(r"\b" + re.escape(t) + r"\b" for t in CORE_CLIMATE_PHRASES),
+        re.IGNORECASE,
+    )
+    # Retain separate cc/gw patterns so legacy columns (cc_count, gw_count) are
+    # still populated for traceability and backward compatibility.
     _cc_pat = re.compile(r"\bclimate\s+change\b", re.IGNORECASE)
     _gw_pat = re.compile(r"\bglobal\s+warming\b", re.IGNORECASE)
-    # Combine all climate terms into one pattern — much faster than 47 separate searches
+    # Full climate vocabulary for criterion (c).
+    # Left-boundary only: prevents "coal" matching "coalition" etc., while
+    # preserving prefix terms ("decarboni" → decarbonise/ization, "adapt" → adaptation).
     _cm_pat = re.compile(
-        "|".join(re.escape(t) for t in CLIMATE_TERMS), re.IGNORECASE
+        "|".join(r"\b" + re.escape(t) for t in CLIMATE_TERMS),
+        re.IGNORECASE,
     )
 
     bodies     = df["body"].tolist()
@@ -216,12 +229,13 @@ def apply_exclusions(df: pd.DataFrame) -> pd.DataFrame:
             rel_list.append("Exclude")
             continue
 
-        th = "climate change" in title.lower() or "global warming" in title.lower()
-        cc = len(_cc_pat.findall(body))
-        gw = len(_gw_pat.findall(body))
-        cg = cc + gw
+        title_lower = title.lower()
+        th  = bool(_core_pat.search(title_lower))   # any core phrase in title
+        cc  = len(_cc_pat.findall(body))             # legacy column
+        gw  = len(_gw_pat.findall(body))             # legacy column
+        cg  = len(_core_pat.findall(body))           # core phrase count (all 14 phrases)
         # Only compute climate_mentions if needed (cg < threshold and no title hit)
-        if cg >= CC_GW_THRESHOLD or th:
+        if cg >= CC_CORE_THRESHOLD or th:
             cm  = 0   # already included — no need to count
             inc = True
         else:
@@ -256,11 +270,21 @@ def apply_exclusions(df: pd.DataFrame) -> pd.DataFrame:
         (df["section"].str.lower().isin(["australia news", "australia-news"]))
     )
 
-    # Letters are included but tracked separately
+    # Letters are included but tracked separately.
+    # Primary signal: content_type tag from NewsBank / config.py folder mapping.
+    # Secondary signal: title pattern — catches cases where a letters-page was
+    # exported from a non-Letters folder (e.g. TheAge_Analysis/Missingyears)
+    # and inherited an incorrect content_type ("Opinion/Op-Ed" or "Analysis").
+    _letter_title = df["title"].str.strip().str.lower().str.match(
+        r"^(letters?|letters?\s*[-–&]\s*|feedback|letters?\s*&\s*emails?)"
+    )
     letters_mask = (
         (df["relevance"] == "Include") &
         (~guardian_news_mask) &
-        (df["content_type"].str.lower().isin(["letters", "letter"]))
+        (
+            df["content_type"].str.lower().isin(["letters", "letter"]) |
+            _letter_title.fillna(False)
+        )
     )
 
     editorial_mask = (
@@ -377,7 +401,7 @@ def prisma_summary(df: pd.DataFrame):
     passed_rel = pre_screen - excl_rel
     print(f"\n  STAGE 2 — RELEVANCE SCREENING")
     print(f"  {SEP}")
-    print(f"  Criterion: cc+gw ≥ 3  OR  title hit  OR  cc+gw ≥ 1 AND climate_mentions ≥ 4")
+    print(f"  Criterion: core_phrases ≥ 3  OR  core in title  OR  core ≥ 1 AND climate_mentions ≥ 3")
     print(f"  {'Excluded — not climate-relevant:':<48} {excl_rel:>6,}")
     print(f"  {'Passed relevance screen:':<48} {passed_rel:>6,}")
 

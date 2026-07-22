@@ -1,35 +1,24 @@
 """
 analyse_clusters.py
 ───────────────────
-Exploratory analysis of BERTopic cluster assignments.
+Generates all figures for the BERTopic cluster analysis.
 
-Five output modes (all saved to figures/cluster_analysis/):
+Outputs (saved to figures/cluster_analysis/):
+  - deepdive_<group>_A.pdf  — per-publication % share by year (Panel A)
+  - deepdive_<group>_C.pdf  — article counts by era and publication (Panel C)
+  - pub_share_matrix.pdf    — column-normalised outlet × group heatmap
+  - pol_lead_keyword_cooccurrence.pdf — keyword co-occurrence within Political Leadership by era
 
-  1. overview   — era heatmap + publication stacked bar for ALL topics
-  2. timeline   — per-topic article volume by year (all 68 or a subset)
-  3. cluster N  — deep-dive on a single topic: timeline, pub breakdown, era×source
-                  breakdown, and a sample article list
-  4. group G    — same deep-dive for one of the 11 named thematic groups
-  5. bubbles    — corpus-level packed bubble chart (all topics) + per-cluster
-                  keyword bubble charts
-
-Usage examples
-──────────────
-  python analyse_clusters.py                      # all figures
-  python analyse_clusters.py --mode timeline      # timeline for all topics
-  python analyse_clusters.py --mode cluster --id 0          # T00 deep-dive
-  python analyse_clusters.py --mode cluster --id 9 42       # T09 + T42
-  python analyse_clusters.py --mode group --name "Australian domestic politics"
-  python analyse_clusters.py --mode group --name energy      # substring match
+Usage
+─────
+  python analyse_clusters.py
 
 Requirements
 ────────────
   pip install pandas matplotlib numpy --break-system-packages
 """
 
-import argparse
 import ast
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -39,7 +28,7 @@ import pandas as pd
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 REPO        = Path(__file__).parent
-DATA_DIR    = REPO / "data" / "combined-no-letters"
+DATA_DIR    = REPO / "data" / "australian-no-letters"
 FIGURES_DIR = REPO / "figures" / "cluster_analysis"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -63,8 +52,8 @@ plt.rcParams.update({
 
 ELECTIONS = [1996, 1998, 2001, 2004, 2007, 2010, 2013, 2016, 2019, 2022, 2025]
 
-ERA_ORDER = ["Pre-Howard", "Howard", "Rudd/Gillard", "Abbott", "Turnbull/Morrison", "Albanese"]
-ERA_COLORS = ["#aaaaaa", "#4393c3", "#74c476", "#fd8d3c", "#9e9ac8", "#f768a1"]
+ERA_ORDER = ["Howard", "Rudd/Gillard", "Abbott", "Turnbull/Morrison", "Albanese"]
+ERA_COLORS = ["#4393c3", "#74c476", "#fd8d3c", "#9e9ac8", "#f768a1"]
 ERA_COLOR  = dict(zip(ERA_ORDER, ERA_COLORS))
 
 # Canonical publication normalisation
@@ -77,35 +66,55 @@ def norm_pub(p: str) -> str:
     if "Australian" in p:                                  return "The Australian"
     return "Other"
 
-PUB_ORDER  = ["Guardian", "The Age", "SMH", "Canberra Times", "The Australian", "Letters", "Other"]
-PUB_COLORS = ["#2166ac", "#4dac26", "#d6604d", "#8073ac", "#e08214", "#e6ab02", "#aaaaaa"]
+# Australian corpus only — Guardian and letters excluded from analysis
+PUB_ORDER  = ["The Australian", "The Age", "SMH", "Canberra Times", "Other"]
+# Seaborn "colorblind" palette (Wong 2011) — accessible to most colour-vision deficiencies
+PUB_COLORS = ["#0173b2", "#de8f05", "#029e73", "#d55e00", "#949494"]
 PUB_COLOR  = dict(zip(PUB_ORDER, PUB_COLORS))
 
 # ── Thematic group assignments ─────────────────────────────────────────────────
-# Populated at runtime from the topic_group column in topic_assignments.csv.
-# Do not edit this dict — update topic_group_mapping.csv instead.
+# Populated at runtime from the 'theme' column in topic_assignments.csv.
+# The column is added by the theme-mapping step in the analysis pipeline.
 GROUPS: dict[str, list[int]] = {}
-NOISE_GROUPS: set[str] = {"Noise"}
+NOISE_GROUPS: set[str] = {"Noise", "UK-specific (Guardian only)", "Outlier (unassigned)"}
+
+# Preferred display order for themes (used in heatmaps + bar charts)
+THEME_ORDER = [
+    "Political leadership & party dynamics",
+    "Carbon pricing & emissions policy",
+    "Climate science & physical impacts",
+    "Energy policy & transition",
+    "Environment & biodiversity",
+    "Media, culture & society",
+    "International climate diplomacy",
+]
+
+# Minimum articles a publication must have in a given year for its Panel A
+# line to be drawn in colour.  Years below this threshold are drawn in grey.
+MIN_PUB_YEAR_N: int = 15
 
 
 def build_groups(df: pd.DataFrame) -> dict[str, list[int]]:
     """
-    Derive the group → [topic_id, …] mapping from the 'topic_group' column
-    in the assignments dataframe. Noise rows are excluded.
-    Raises ValueError if the column is absent (run_bertopic + update mapping first).
+    Derive the group → [topic_id, …] mapping from the 'theme' column
+    in the assignments dataframe. Noise/outlier rows are excluded.
+    Falls back to 'topic_group' column for backward compatibility.
     """
-    if "topic_group" not in df.columns:
+    col = "theme" if "theme" in df.columns else "topic_group"
+    if col not in df.columns:
         raise ValueError(
-            "'topic_group' column not found in topic_assignments.csv.\n"
-            "Run the topic-group mapping update script before plotting."
+            "Neither 'theme' nor 'topic_group' column found in topic_assignments.csv.\n"
+            "Ensure the theme-mapping step has been run."
         )
-    active = df[
-        df["topic_group"].notna() & ~df["topic_group"].isin(NOISE_GROUPS)
-    ]
-    return {
-        grp: sorted(active[active["topic_group"] == grp]["topic_id"].unique().tolist())
-        for grp in active["topic_group"].unique()
+    active = df[df[col].notna() & ~df[col].isin(NOISE_GROUPS)]
+    groups = {
+        grp: sorted(active[active[col] == grp]["topic_id"].unique().tolist())
+        for grp in active[col].unique()
     }
+    # Sort by THEME_ORDER where possible
+    ordered = {k: groups[k] for k in THEME_ORDER if k in groups}
+    ordered.update({k: v for k, v in groups.items() if k not in ordered})
+    return ordered
 
 # ── Data loading ───────────────────────────────────────────────────────────────
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -115,19 +124,6 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     df["doc_type"] = "editorial"
     df = df[df["year"].between(1987, 2026)].copy()
 
-    # Merge letters if the transform has been run
-    if LETTERS_CSV.exists():
-        letters = pd.read_csv(LETTERS_CSV)
-        letters["pub"]      = letters["publication"].apply(norm_pub)
-        letters["year"]     = pd.to_numeric(letters["year"], errors="coerce")
-        letters["doc_type"] = "letter"
-        letters = letters[letters["year"].between(1987, 2026)].copy()
-        df = pd.concat([df, letters], ignore_index=True)
-        # Treat all letters as a single "Letters" publication category
-        df.loc[df["doc_type"] == "letter", "pub"] = "Letters"
-        print(f"  Loaded {len(letters):,} letters (data/letters/topic_assignments.csv)")
-    else:
-        print("  [info] No letters assignments found — run with --transform-only to add them")
 
     # Normalise era labels
     era_map = {
@@ -167,7 +163,6 @@ def add_elections(ax, year_range):
 
 # ── Helper: era bands + labels below x-axis ───────────────────────────────────
 ERA_SPANS = [
-    ("Pre-Howard",       1987, 1996),
     ("Howard",           1996, 2007),
     ("Rudd/Gillard",     2007, 2013),
     ("Abbott",           2013, 2015),
@@ -194,135 +189,7 @@ def add_era_bands(ax, year_range):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MODE 1: OVERVIEW — era heatmap + pub stacked bar for all 67 topics
-# ══════════════════════════════════════════════════════════════════════════════
-def plot_overview(df: pd.DataFrame, summary: pd.DataFrame):
-    print("Generating overview figures…")
-
-    # ── 1a. Era heatmap ───────────────────────────────────────────────────────
-    era_counts = (
-        df.groupby(["topic_id", "era_norm"])
-        .size()
-        .unstack(fill_value=0)
-        .reindex(columns=ERA_ORDER, fill_value=0)
-    )
-    era_pct = era_counts.div(era_counts.sum(axis=1), axis=0) * 100
-
-    # Sort topics by group order then article count within group
-    ordered_tids = []
-    for grp, tids in GROUPS.items():
-        ordered_tids.extend(sorted(tids, key=lambda t: -df[df["topic_id"] == t].shape[0]))
-    era_pct = era_pct.reindex(ordered_tids, fill_value=0)
-
-    labels = [short_label(summary, t) for t in ordered_tids]
-
-    fig, ax = plt.subplots(figsize=(12, 14))
-    im = ax.imshow(era_pct.values.T, aspect="auto", cmap="YlOrRd", vmin=0, vmax=100)
-    ax.set_xticks(range(len(ordered_tids)))
-    ax.set_xticklabels(labels, rotation=90, fontsize=6.5)
-    ax.set_yticks(range(len(ERA_ORDER)))
-    ax.set_yticklabels(ERA_ORDER)
-    ax.set_title("Figure — Topic × Era heatmap (% of topic's articles per era)", pad=12)
-    plt.colorbar(im, ax=ax, label="% of topic articles", shrink=0.5)
-
-    # Draw group separators
-    pos = 0
-    for grp, tids in GROUPS.items():
-        ax.axvline(pos - 0.5, color="white", linewidth=1.5)
-        ax.text(pos + len(tids) / 2 - 0.5, -1.8, grp, ha="center", va="top",
-                fontsize=6, rotation=30, color="#333333", transform=ax.transData)
-        pos += len(tids)
-
-    fig.tight_layout()
-    out = FIGURES_DIR / "overview_era_heatmap.pdf"
-    fig.savefig(out, bbox_inches="tight")
-    plt.close()
-    print(f"  Saved {out.name}")
-
-    # ── 1b. Publication stacked bar for all topics ─────────────────────────────
-    pub_counts = (
-        df.groupby(["topic_id", "pub"])
-        .size()
-        .unstack(fill_value=0)
-        .reindex(columns=PUB_ORDER, fill_value=0)
-    )
-    pub_pct = pub_counts.div(pub_counts.sum(axis=1), axis=0) * 100
-    pub_pct = pub_pct.reindex(ordered_tids, fill_value=0)
-
-    fig, ax = plt.subplots(figsize=(14, 5))
-    bottom = np.zeros(len(ordered_tids))
-    x = np.arange(len(ordered_tids))
-    for pub in PUB_ORDER:
-        vals = pub_pct[pub].values
-        ax.bar(x, vals, bottom=bottom, color=PUB_COLOR[pub], label=pub,
-               edgecolor="none", width=0.85)
-        bottom += vals
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=90, fontsize=6.5)
-    ax.set_ylabel("% of topic articles")
-    ax.set_title("Figure — Publication share per topic (all 68 clusters)")
-    ax.legend(frameon=False, bbox_to_anchor=(1.01, 1), loc="upper left")
-    ax.set_ylim(0, 105)
-
-    # Group separators
-    pos = 0
-    for grp, tids in GROUPS.items():
-        ax.axvline(pos - 0.5, color="#cccccc", linewidth=1.0)
-        pos += len(tids)
-
-    fig.tight_layout()
-    out = FIGURES_DIR / "overview_pub_share.pdf"
-    fig.savefig(out, bbox_inches="tight")
-    plt.close()
-    print(f"  Saved {out.name}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MODE 2: TIMELINE — article volume by year for all (or selected) topics
-# ══════════════════════════════════════════════════════════════════════════════
-def plot_timeline_all(df: pd.DataFrame, summary: pd.DataFrame, topic_ids=None):
-    """One figure per thematic group, each line = one topic within that group."""
-    if topic_ids is None:
-        groups_to_plot = GROUPS
-    else:
-        groups_to_plot = {"Selected topics": topic_ids}
-
-    year_range = list(range(1987, 2027))
-    cmap = plt.cm.tab20
-
-    for grp_name, tids in groups_to_plot.items():
-        fig, ax = plt.subplots(figsize=(10, 4))
-        colors = [cmap(i / max(len(tids), 1)) for i in range(len(tids))]
-
-        for tid, color in zip(tids, colors):
-            sub = df[df["topic_id"] == tid]
-            if sub.empty:
-                continue
-            yearly = sub.groupby("year").size().reindex(year_range, fill_value=0)
-            lbl = short_label(summary, tid)
-            ax.plot(year_range, yearly.values, linewidth=1.5, color=color,
-                    label=lbl, alpha=0.85)
-            ax.fill_between(year_range, yearly.values, alpha=0.06, color=color)
-
-        add_elections(ax, year_range)
-        ax.set_xlabel("Year")
-        ax.set_ylabel("Articles per year")
-        ax.set_xlim(1987, 2026)
-        ax.set_title(f"Timeline — {grp_name}")
-        ax.legend(frameon=False, fontsize=7.5, loc="upper left",
-                  bbox_to_anchor=(1.01, 1))
-        fig.tight_layout()
-
-        safe_name = grp_name.lower().replace(" ", "_").replace("&", "and").replace("/", "-")
-        out = FIGURES_DIR / f"timeline_{safe_name}.pdf"
-        fig.savefig(out, bbox_inches="tight")
-        plt.close()
-        print(f"  Saved {out.name}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MODE 3 / 4: CLUSTER DEEP-DIVE (one or more topic IDs, or a group)
+# CLUSTER DEEP-DIVE (Panel A + Panel C for each group)
 # ══════════════════════════════════════════════════════════════════════════════
 def plot_cluster_deepdive(df: pd.DataFrame, summary: pd.DataFrame,
                           topic_ids: list[int], label: str):
@@ -351,15 +218,19 @@ def plot_cluster_deepdive(df: pd.DataFrame, summary: pd.DataFrame,
         yearly_n = psub.groupby("year").size().reindex(year_range, fill_value=0)
         total_n  = df_ed[df_ed["pub"] == pub].groupby("year").size().reindex(year_range, fill_value=0)
         pct = yearly_n.div(total_n.replace(0, np.nan)) * 100
-        ax.plot(year_range, pct.values, color=PUB_COLOR[pub],
+        reliable = total_n >= MIN_PUB_YEAR_N
+        # Full line in grey (unreliable baseline visible everywhere)
+        ax.plot(year_range, pct.values, color="#bbbbbb", linewidth=1.0, alpha=0.7)
+        # Overplot reliable segments in publication colour
+        pct_reliable = pct.where(reliable)
+        ax.plot(year_range, pct_reliable.values, color=PUB_COLOR[pub],
                 linewidth=1.6, label=pub, alpha=0.9)
-        ax.fill_between(year_range, pct.fillna(0).values, alpha=0.07, color=PUB_COLOR[pub])
     add_elections(ax, year_range)
     add_era_bands(ax, year_range)
     ax.set_xlabel("Year")
     ax.set_ylabel("% of publication's annual articles")
-    ax.set_title(f"Cluster share of each publication's coverage — {title_sfx}", pad=28)
-    ax.set_xlim(min(year_range), 2026)
+    ax.set_title(title_sfx, pad=28)
+    ax.set_xlim(1996, 2026)
     ax.legend(frameon=False, fontsize=8)
     fig.tight_layout()
     fig.subplots_adjust(top=0.82)
@@ -368,25 +239,25 @@ def plot_cluster_deepdive(df: pd.DataFrame, summary: pd.DataFrame,
     plt.close()
     print(f"  Saved {out.name}")
 
-    # ── Panel B: publication share ────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(6, 4))
-    pub_order_b = [p for p in PUB_ORDER if p != "Other"]
-    pub_counts  = sub["pub"].value_counts().reindex(pub_order_b, fill_value=0)
-    pub_pct     = pub_counts / pub_counts.sum() * 100
-    nonzero     = pub_pct[pub_pct > 0]
-    bars = ax.barh(nonzero.index[::-1], nonzero.values[::-1],
-                   color=[PUB_COLOR[p] for p in nonzero.index[::-1]],
-                   edgecolor="white")
-    ax.bar_label(bars, labels=[f"{v:.1f}%" for v in nonzero.values[::-1]],
-                 padding=4, fontsize=8)
-    ax.set_xlabel("% of cluster articles")
-    ax.set_title(f"Publication share — {title_sfx}")
-    ax.set_xlim(0, nonzero.max() * 1.18 if not nonzero.empty else 1)
-    fig.tight_layout()
-    out = FIGURES_DIR / f"deepdive_{safe}_B.pdf"
-    fig.savefig(out, bbox_inches="tight")
-    plt.close()
-    print(f"  Saved {out.name}")
+    # # ── Panel B: publication share ────────────────────────────────────────────
+    # fig, ax = plt.subplots(figsize=(6, 4))
+    # pub_order_b = [p for p in PUB_ORDER if p != "Other"]
+    # pub_counts  = sub["pub"].value_counts().reindex(pub_order_b, fill_value=0)
+    # pub_pct     = pub_counts / pub_counts.sum() * 100
+    # nonzero     = pub_pct[pub_pct > 0]
+    # bars = ax.barh(nonzero.index[::-1], nonzero.values[::-1],
+    #                color=[PUB_COLOR[p] for p in nonzero.index[::-1]],
+    #                edgecolor="white")
+    # ax.bar_label(bars, labels=[f"{v:.1f}%" for v in nonzero.values[::-1]],
+    #              padding=4, fontsize=8)
+    # ax.set_xlabel("% of cluster articles")
+    # ax.set_title(f"Publication share — {title_sfx}")
+    # ax.set_xlim(0, nonzero.max() * 1.18 if not nonzero.empty else 1)
+    # fig.tight_layout()
+    # out = FIGURES_DIR / f"deepdive_{safe}_B.pdf"
+    # fig.savefig(out, bbox_inches="tight")
+    # plt.close()
+    # print(f"  Saved {out.name}")
 
     # ── Panel C: era × publication breakdown (article counts) ────────────────
     fig, ax = plt.subplots(figsize=(9, 4))
@@ -422,11 +293,52 @@ def plot_cluster_deepdive(df: pd.DataFrame, summary: pd.DataFrame,
     ax.set_xticks(x)
     ax.set_xticklabels(ERA_ORDER, fontsize=8, rotation=15, ha="right")
     ax.set_ylabel("Number of articles")
-    ax.set_title(f"Articles by era and source — {title_sfx}")
+    ax.set_title(title_sfx)
     ax.set_ylim(0, max_val * 1.18)
     ax.legend(frameon=False, fontsize=8, loc="upper right")
     fig.tight_layout()
     out = FIGURES_DIR / f"deepdive_{safe}_C.pdf"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close()
+    print(f"  Saved {out.name}")
+
+    # ── Panel D: era × publication — % of each outlet's era total ───────────
+    # Denominator: total editorial articles per outlet per era (not just this group)
+    df_ed_era = df[df["doc_type"] == "editorial"] if "doc_type" in df.columns else df
+    era_total = (
+        df_ed_era.groupby(["era_norm", "pub"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(index=ERA_ORDER, columns=PUB_ORDER, fill_value=0)
+    )
+    # Only keep pubs that appear in this group
+    era_total_grp = era_total[active_pubs]
+    # Column-normalised %: group articles / total outlet×era articles
+    era_pct = era_pub.div(era_total_grp.replace(0, np.nan)) * 100
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    max_val_d = 0
+    for i, pub in enumerate(active_pubs):
+        vals = era_pct[pub].values
+        bars = ax.bar(x + offsets[i], vals, width=bar_w * 0.9,
+                      color=PUB_COLOR.get(pub, "#aaaaaa"), label=pub,
+                      edgecolor="white", linewidth=0.4)
+        for rect, v in zip(bars, vals):
+            if np.isnan(v) or v < 0.5:
+                continue
+            ax.text(rect.get_x() + rect.get_width() / 2,
+                    rect.get_height() + max(np.nanmax(vals) * 0.01, 0.3),
+                    f"{v:.0f}%", ha="center", va="bottom",
+                    fontsize=7, color="#333333")
+        max_val_d = max(max_val_d, np.nanmax(vals) if not np.all(np.isnan(vals)) else 0)
+    ax.set_xticks(x)
+    ax.set_xticklabels(ERA_ORDER, fontsize=8, rotation=15, ha="right")
+    ax.set_ylabel("% of outlet's articles in era")
+    ax.set_title(title_sfx)
+    ax.set_ylim(0, max_val_d * 1.18)
+    ax.legend(frameon=False, fontsize=8, loc="upper right")
+    fig.tight_layout()
+    out = FIGURES_DIR / f"deepdive_{safe}_D.pdf"
     fig.savefig(out, bbox_inches="tight")
     plt.close()
     print(f"  Saved {out.name}")
@@ -438,19 +350,19 @@ def plot_cluster_deepdive(df: pd.DataFrame, summary: pd.DataFrame,
         print(f"    {int(row['year'])}  [{row['pub'][:15]:15s}]  {row['title'][:80]}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MODE 5a: CORPUS BUBBLE CHART — all topics as packed circles
-# ══════════════════════════════════════════════════════════════════════════════
-GROUP_COLORS = {
-    "Australian Politics & Policy":             "#e41a1c",
-    "Nature, Ecosystems & Food Systems":        "#17becf",
-    "Energy Transition & Technology":           "#984ea3",
-    "US & UK Politics":                         "#f768a1",
-    "Fossil Fuels, Divestment & Carbon Markets":"#ff7f00",
-    "Climate Science":                          "#4daf4a",
-    "International Negotiations & Geopolitics": "#377eb8",
-    "Activism & Social Movements":              "#e6ab02",
-}
+# # ══════════════════════════════════════════════════════════════════════════════
+# # MODE 5a: CORPUS BUBBLE CHART — all topics as packed circles
+# # ══════════════════════════════════════════════════════════════════════════════
+# GROUP_COLORS = {
+#     "Australian Politics & Policy":             "#e41a1c",
+#     "Nature, Ecosystems & Food Systems":        "#17becf",
+#     "Energy Transition & Technology":           "#984ea3",
+#     "US & UK Politics":                         "#f768a1",
+#     "Fossil Fuels, Divestment & Carbon Markets":"#ff7f00",
+#     "Climate Science":                          "#4daf4a",
+#     "International Negotiations & Geopolitics": "#377eb8",
+#     "Activism & Social Movements":              "#e6ab02",
+# }
 
 
 def _pack_circles(radii: np.ndarray) -> np.ndarray:
@@ -493,60 +405,254 @@ def _pack_circles(radii: np.ndarray) -> np.ndarray:
     return centres
 
 
-def plot_corpus_bubbles(df: pd.DataFrame, summary: pd.DataFrame):
-    """Packed bubble chart: one circle per display entry, sized by article count."""
-    print("  Generating corpus bubble chart…")
+# def plot_corpus_bubbles(df: pd.DataFrame, summary: pd.DataFrame):
+#     """Packed bubble chart: one circle per display entry, sized by article count."""
+#     print("  Generating corpus bubble chart…")
+#
+#     # Build display entries (one per topic)
+#     entries = []
+#     for grp, tids in GROUPS.items():
+#         for tid in tids:
+#             sub = df[df["topic_id"] == tid]
+#             n = len(sub)
+#             row = summary[summary["topic_id"] == tid]
+#             kws = ast.literal_eval(row.iloc[0]["keywords"]) if not row.empty else []
+#             kw = kws[0] if kws else f"T{tid:02d}"
+#             label = f"T{tid:02d}"
+#             entries.append({"group": grp, "tid": tid, "n": n,
+#                             "kw": kw, "label": label})
+#
+#     ns      = np.array([e["n"] for e in entries], dtype=float)
+#     radii   = np.sqrt(ns / np.pi) * 0.55   # scale so largest ≈ readable
+#     centres = _pack_circles(radii)
+#
+#     fig, ax = plt.subplots(figsize=(14, 14))
+#     ax.set_aspect("equal")
+#     ax.axis("off")
+#
+#     for e, r, (cx, cy) in zip(entries, radii, centres):
+#         color = GROUP_COLORS.get(e["group"], "#cccccc")
+#         circle = plt.Circle((cx, cy), r, color=color, alpha=0.82, linewidth=0.5,
+#                             edgecolor="white")
+#         ax.add_patch(circle)
+#         # Label: short keyword + article count
+#         fs_kw = max(5.0, min(10.0, r * 1.1))
+#         fs_n  = max(4.5, min(8.5,  r * 0.85))
+#         ax.text(cx, cy + r * 0.18, e["kw"], ha="center", va="center",
+#                 fontsize=fs_kw, fontweight="bold", color="white",
+#                 wrap=False, clip_on=True)
+#         ax.text(cx, cy - r * 0.28, f"n={e['n']:,}", ha="center", va="center",
+#                 fontsize=fs_n, color="white", alpha=0.9, clip_on=True)
+#
+#     # Legend for groups
+#     from matplotlib.patches import Patch
+#     handles = [Patch(facecolor=c, label=g, alpha=0.85)
+#                for g, c in GROUP_COLORS.items()]
+#     ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+#               ncol=3, frameon=False, fontsize=8)
+#
+#     ax.autoscale_view()
+#     ax.set_title("Corpus topic map — bubble size ∝ article count",
+#                  fontsize=13, pad=16)
+#     fig.tight_layout()
+#     out = FIGURES_DIR / "corpus_bubble_chart.pdf"
+#     fig.savefig(out, bbox_inches="tight")
+#     plt.close()
+#     print(f"    Saved {out.name}")
 
-    # Build display entries (one per topic)
-    entries = []
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PUBLICATION SHARE MATRIX
+# ══════════════════════════════════════════════════════════════════════════════
+def plot_pub_share_matrix(df: pd.DataFrame):
+    """
+    Heatmap: rows = thematic groups, columns = publications.
+    Each cell = % of that publication's articles in the group
+    (column-normalised by each outlet's total article count).
+    """
+    print("  Generating publication share matrix…")
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    pubs = [p for p in PUB_ORDER if p not in ("Other", "Letters")]
+
+    # Total articles per publication (denominator for column normalisation)
+    # Editorial articles only — letters excluded
+    ed_df = df[df["doc_type"] == "editorial"] if "doc_type" in df.columns else df
+    pub_totals = ed_df["pub"].value_counts().reindex(pubs, fill_value=0)
+
+    # Build group × publication table (column-normalised %, editorial only)
+    rows = []
     for grp, tids in GROUPS.items():
-        for tid in tids:
-            sub = df[df["topic_id"] == tid]
-            n = len(sub)
-            row = summary[summary["topic_id"] == tid]
-            kws = ast.literal_eval(row.iloc[0]["keywords"]) if not row.empty else []
-            kw = kws[0] if kws else f"T{tid:02d}"
-            label = f"T{tid:02d}"
-            entries.append({"group": grp, "tid": tid, "n": n,
-                            "kw": kw, "label": label})
+        sub = ed_df[ed_df["topic_id"].isin(tids)]
+        counts = sub["pub"].value_counts().reindex(pubs, fill_value=0)
+        pct = counts / pub_totals.replace(0, np.nan) * 100
+        rows.append({"group": grp, **pct.to_dict()})
 
-    ns      = np.array([e["n"] for e in entries], dtype=float)
-    radii   = np.sqrt(ns / np.pi) * 0.55   # scale so largest ≈ readable
-    centres = _pack_circles(radii)
+    matrix = pd.DataFrame(rows).set_index("group")[pubs]
 
-    fig, ax = plt.subplots(figsize=(14, 14))
-    ax.set_aspect("equal")
-    ax.axis("off")
+    n_groups = len(matrix)
+    n_pubs   = len(pubs)
 
-    for e, r, (cx, cy) in zip(entries, radii, centres):
-        color = GROUP_COLORS.get(e["group"], "#cccccc")
-        circle = plt.Circle((cx, cy), r, color=color, alpha=0.82, linewidth=0.5,
-                            edgecolor="white")
-        ax.add_patch(circle)
-        # Label: short keyword + article count
-        fs_kw = max(5.0, min(10.0, r * 1.1))
-        fs_n  = max(4.5, min(8.5,  r * 0.85))
-        ax.text(cx, cy + r * 0.18, e["kw"], ha="center", va="center",
-                fontsize=fs_kw, fontweight="bold", color="white",
-                wrap=False, clip_on=True)
-        ax.text(cx, cy - r * 0.28, f"n={e['n']:,}", ha="center", va="center",
-                fontsize=fs_n, color="white", alpha=0.9, clip_on=True)
+    fig, ax = plt.subplots(figsize=(max(7, n_pubs * 1.4), max(5, n_groups * 0.65)))
 
-    # Legend for groups
-    from matplotlib.patches import Patch
-    handles = [Patch(facecolor=c, label=g, alpha=0.85)
-               for g, c in GROUP_COLORS.items()]
-    ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.02),
-              ncol=3, frameon=False, fontsize=8)
+    im = ax.imshow(matrix.values, cmap="Blues", aspect="auto", vmin=0)
 
-    ax.autoscale_view()
-    ax.set_title("Corpus topic map — bubble size ∝ article count",
-                 fontsize=13, pad=16)
+    # Annotate cells
+    vmax = np.nanmax(matrix.values)
+    for i in range(n_groups):
+        for j in range(n_pubs):
+            val = matrix.values[i, j]
+            if np.isnan(val) or val < 0.5:
+                continue
+            text_color = "white" if val > vmax * 0.65 else "black"
+            ax.text(j, i, f"{val:.1f}", ha="center", va="center",
+                    fontsize=8, color=text_color)
+
+    ax.set_xticks(range(n_pubs))
+    ax.set_xticklabels(pubs, rotation=30, ha="right", fontsize=9)
+    ax.set_yticks(range(n_groups))
+    ax.set_yticklabels(matrix.index, fontsize=9)
+
+    ax.set_title("% of each publication's articles per thematic group",
+                 fontsize=11, pad=10)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.2)
+    fig.colorbar(im, cax=cax, label="% of publication's articles")
+
     fig.tight_layout()
-    out = FIGURES_DIR / "corpus_bubble_chart.pdf"
+    out = FIGURES_DIR / "pub_share_matrix.pdf"
     fig.savefig(out, bbox_inches="tight")
     plt.close()
     print(f"    Saved {out.name}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POLITICAL LEADERSHIP KEYWORD CO-OCCURRENCE ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════
+def plot_t00_keyword_cooccurrence(df: pd.DataFrame, summary: pd.DataFrame):
+    """
+    Within all articles in the Political leadership & party dynamics group, measure
+    how often keywords from each other thematic group appear in article bodies.
+
+    For each Political Leadership article, scores binary presence (1/0) of any
+    keyword from each other group, then aggregates by political era.  Shows which
+    themes co-occur most with political leadership coverage, and how that has
+    shifted over time.
+    """
+    import re
+    import csv
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    print("  Loading article bodies for Political Leadership keyword co-occurrence…")
+
+    # ── Load body text from articles_scored.csv ───────────────────────────────
+    SCORED_CSV = REPO / "data" / "articles_scored.csv"
+    csv.field_size_limit(10_000_000)
+    bodies = pd.read_csv(
+        SCORED_CSV,
+        usecols=["title", "year", "body"],
+        dtype={"year": "Int64"},
+    )
+
+    # ── Restrict to Political Leadership articles, join body text ─────────────
+    pol_lead_tids = GROUPS.get("Political leadership & party dynamics", [])
+    t00 = df[df["topic_id"].isin(pol_lead_tids)].copy()
+    t00["year"] = t00["year"].astype("Int64")
+    t00 = t00.merge(bodies, on=["title", "year"], how="left")
+    t00 = t00.dropna(subset=["body"])
+    print(f"  Political Leadership articles with body text: {len(t00):,} / {len(df[df['topic_id'].isin(pol_lead_tids)]):,}")
+
+    # ── Build keyword pattern per group ──────────────────────────────────────
+    # Exclude Political Leadership (circular) and noise/UK-specific groups
+    skip = NOISE_GROUPS | {"Political leadership & party dynamics"}
+
+    group_patterns: dict[str, re.Pattern] = {}
+    for grp, tids in GROUPS.items():
+        if grp in skip:
+            continue
+        kws: list[str] = []
+        for tid in tids:
+            row = summary[summary["topic_id"] == tid]
+            if row.empty:
+                continue
+            kws.extend(ast.literal_eval(row.iloc[0]["keywords"])[:5])  # top 5 per topic
+        if not kws:
+            continue
+        # Deduplicate preserving order
+        seen: set[str] = set()
+        unique = [k for k in kws if not (k in seen or seen.add(k))]  # type: ignore[func-returns-value]
+        # Compile a single alternation pattern — much faster than looping
+        pattern = re.compile(
+            r'\b(?:' + '|'.join(re.escape(k.lower()) for k in unique) + r')\b'
+        )
+        group_patterns[grp] = pattern
+
+    # ── Score each article against each group's keywords ─────────────────────
+    print(f"  Scoring {len(t00):,} Political Leadership articles against {len(group_patterns)} groups…")
+    bodies_lower = t00["body"].str.lower().fillna("")
+
+    for grp, pattern in group_patterns.items():
+        t00[f"grp_{grp}"] = bodies_lower.apply(
+            lambda b, p=pattern: int(bool(p.search(b)))
+        )
+
+    # ── Aggregate by era ──────────────────────────────────────────────────────
+    grp_cols = [f"grp_{g}" for g in group_patterns]
+    era_rates = (
+        t00.groupby("era_norm")[grp_cols].mean() * 100
+    ).reindex(ERA_ORDER).dropna(how="all")
+    era_rates.columns = list(group_patterns.keys())
+
+    # Reorder groups to match pub_share_matrix row order (GROUPS key order)
+    grp_order = [g for g in GROUPS if g not in skip]
+    era_rates = era_rates.reindex(columns=grp_order)
+
+    # Transpose: rows = groups, columns = eras  (mirrors pub_share_matrix layout)
+    cooc = era_rates.T  # shape: n_grps × n_eras
+
+    # ── Plot heatmap ──────────────────────────────────────────────────────────
+    n_grps = len(cooc)
+    n_eras = len(cooc.columns)
+
+    fig, ax = plt.subplots(figsize=(max(6, n_eras * 1.4), max(5, n_grps * 0.65)))
+
+    im = ax.imshow(cooc.values, cmap="YlOrRd", aspect="auto", vmin=0)
+
+    vmax = float(np.nanmax(cooc.values))
+    for i in range(n_grps):
+        for j in range(n_eras):
+            val = cooc.values[i, j]
+            if np.isnan(val):
+                continue
+            text_color = "white" if val > vmax * 0.72 else "black"
+            ax.text(j, i, f"{val:.0f}%", ha="center", va="center",
+                    fontsize=8.5, color=text_color)
+
+    ax.set_xticks(range(n_eras))
+    ax.set_xticklabels(cooc.columns, rotation=30, ha="right", fontsize=9)
+    ax.set_yticks(range(n_grps))
+    ax.set_yticklabels(cooc.index, fontsize=9)
+    ax.set_title(
+        "Keyword co-occurrence by era within the Political Leadership & Party Dynamics group\n",
+        fontsize=11, pad=10,
+    )
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.2)
+    fig.colorbar(im, cax=cax, label="% of Political Leadership articles")
+
+    fig.tight_layout()
+    out = FIGURES_DIR / "pol_lead_keyword_cooccurrence.pdf"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close()
+    print(f"    Saved {out.name}")
+
+    # ── Print summary ─────────────────────────────────────────────────────────
+    overall = cooc.mean(axis=1)  # mean across eras
+    print("\n  Overall keyword co-occurrence rates (mean across eras, % of Political Leadership articles):")
+    for grp in overall.sort_values(ascending=False).index:
+        print(f"    {grp:50s}  {overall[grp]:.1f}%")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -576,153 +682,512 @@ def _get_kw_weights(summary: pd.DataFrame, topic_ids: list[int],
 # ══════════════════════════════════════════════════════════════════════════════
 # MODE 5c: WORDCLOUD keyword charts (requires: pip install wordcloud)
 # ══════════════════════════════════════════════════════════════════════════════
-def plot_keyword_wordcloud(summary: pd.DataFrame, topic_ids: list[int],
-                           label: str, group_color: str = "#2166ac"):
+# def plot_keyword_wordcloud(summary: pd.DataFrame, topic_ids: list[int],
+#                            label: str, group_color: str = "#2166ac"):
+#     """
+#     Word cloud of top keywords for a cluster/group.
+#     Requires the `wordcloud` package (pip install wordcloud).
+#     """
+#     try:
+#         from wordcloud import WordCloud
+#     except ImportError:
+#         print("    [skip] wordcloud not installed — run: pip install wordcloud")
+#         return
+#
+#     items = _get_kw_weights(summary, topic_ids, top_n=40)
+#     if not items:
+#         return
+#
+#     # WordCloud expects a {word: frequency} dict
+#     freq = {w: float(v) for w, v in items}
+#
+#     # Parse hex color to RGB for colormap
+#     base = tuple(int(group_color[i:i+2], 16) for i in (1, 3, 5))
+#
+#     def _color_func(word, font_size, position, orientation,
+#                     random_state=None, **kwargs):
+#         # Vary lightness around the group colour
+#         r = int(np.clip(base[0] + random_state.randint(-30, 30), 0, 255))
+#         g = int(np.clip(base[1] + random_state.randint(-30, 30), 0, 255))
+#         b = int(np.clip(base[2] + random_state.randint(-30, 30), 0, 255))
+#         return f"rgb({r},{g},{b})"
+#
+#     wc = WordCloud(
+#         width=1100, height=650,
+#         background_color="white",
+#         max_words=40,
+#         prefer_horizontal=0.85,
+#         color_func=_color_func,
+#         margin=6,
+#         font_step=1,
+#         min_font_size=9,
+#         max_font_size=90,
+#         collocations=False,
+#     ).generate_from_frequencies(freq)
+#
+#     fig, ax = plt.subplots(figsize=(11, 6.5))
+#     ax.imshow(wc, interpolation="bilinear")
+#     ax.axis("off")
+#     ax.set_title(f"Keywords: {label}", fontsize=12, pad=10, fontweight="bold")
+#     fig.tight_layout(pad=0.5)
+#
+#     safe = label.lower().replace(" ", "_").replace("&", "and").replace("/", "-")[:55]
+#     out  = FIGURES_DIR / f"wordcloud_{safe}.pdf"
+#     fig.savefig(out, bbox_inches="tight", dpi=180)
+#     plt.close()
+#     print(f"    Saved {out.name}")
+
+
+# def plot_all_keyword_wordclouds(summary: pd.DataFrame):
+#     """Word cloud for every thematic group (requires wordcloud package)."""
+#     print("  Generating keyword word clouds…")
+#     for grp_name, tids in GROUPS.items():
+#         color = GROUP_COLORS.get(grp_name, "#555555")
+#         plot_keyword_wordcloud(summary, tids, grp_name, group_color=color)
+#
+#
+# def plot_all_keyword_bubbles(summary: pd.DataFrame):
+#     """Convenience wrapper: generate word clouds for all groups."""
+#     plot_all_keyword_wordclouds(summary)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PUB SHARE BY ERA  — column-normalised heatmap, one panel per era
+# ══════════════════════════════════════════════════════════════════════════════
+def plot_pub_share_by_era(df: pd.DataFrame):
     """
-    Word cloud of top keywords for a cluster/group.
-    Requires the `wordcloud` package (pip install wordcloud).
+    For each of the five government eras, produce a column-normalised heatmap:
+      rows  = thematic groups (in THEME_ORDER)
+      cols  = publications
+      cells = % of that outlet's articles in that era falling in the group
+
+    All five eras are laid out as a single figure with shared row/col labels.
     """
-    try:
-        from wordcloud import WordCloud
-    except ImportError:
-        print("    [skip] wordcloud not installed — run: pip install wordcloud")
-        return
+    print("  Generating pub share by era (column-normalised)…")
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    items = _get_kw_weights(summary, topic_ids, top_n=40)
-    if not items:
-        return
+    pubs     = [p for p in PUB_ORDER if p not in ("Letters", "Other")]
+    themes   = [g for g in THEME_ORDER if g in GROUPS]
+    eras     = [e for e in ERA_ORDER if e in df["era_norm"].unique()]
+    n_eras   = len(eras)
+    n_themes = len(themes)
+    n_pubs   = len(pubs)
 
-    # WordCloud expects a {word: frequency} dict
-    freq = {w: float(v) for w, v in items}
+    fig, axes = plt.subplots(
+        1, n_eras,
+        figsize=(n_eras * (n_pubs * 1.1 + 0.6), n_themes * 0.65 + 1.8),
+        sharey=True,
+    )
+    if n_eras == 1:
+        axes = [axes]
 
-    # Parse hex color to RGB for colormap
-    base = tuple(int(group_color[i:i+2], 16) for i in (1, 3, 5))
+    vmax_global = 0.0
+    matrices = {}
+    for era in eras:
+        era_df = df[(df["era_norm"] == era) & (df["doc_type"] == "editorial")]
+        pub_totals = era_df["pub"].value_counts().reindex(pubs, fill_value=0)
+        rows = []
+        for grp in themes:
+            tids  = GROUPS.get(grp, [])
+            sub   = era_df[era_df["topic_id"].isin(tids)]
+            cnts  = sub["pub"].value_counts().reindex(pubs, fill_value=0)
+            pct   = cnts / pub_totals.replace(0, np.nan) * 100
+            rows.append(pct.values)
+        mat = np.array(rows, dtype=float)
+        matrices[era] = mat
+        vmax_global = max(vmax_global, float(np.nanmax(mat)) if mat.size else 0)
 
-    def _color_func(word, font_size, position, orientation,
-                    random_state=None, **kwargs):
-        # Vary lightness around the group colour
-        r = int(np.clip(base[0] + random_state.randint(-30, 30), 0, 255))
-        g = int(np.clip(base[1] + random_state.randint(-30, 30), 0, 255))
-        b = int(np.clip(base[2] + random_state.randint(-30, 30), 0, 255))
-        return f"rgb({r},{g},{b})"
+    for ax, era in zip(axes, eras):
+        mat = matrices[era]
+        im  = ax.imshow(mat, cmap="Blues", aspect="auto",
+                        vmin=0, vmax=vmax_global)
+        ax.set_xticks(range(n_pubs))
+        ax.set_xticklabels(pubs, rotation=35, ha="right", fontsize=8)
+        ax.set_title(era, fontsize=9, fontweight="bold", pad=6)
 
-    wc = WordCloud(
-        width=1100, height=650,
-        background_color="white",
-        max_words=40,
-        prefer_horizontal=0.85,
-        color_func=_color_func,
-        margin=6,
-        font_step=1,
-        min_font_size=9,
-        max_font_size=90,
-        collocations=False,
-    ).generate_from_frequencies(freq)
+        # Annotate cells
+        for i in range(n_themes):
+            for j in range(n_pubs):
+                val = mat[i, j]
+                if np.isnan(val) or val < 1.0:
+                    continue
+                text_color = "white" if val > vmax_global * 0.65 else "black"
+                ax.text(j, i, f"{val:.0f}", ha="center", va="center",
+                        fontsize=7.5, color=text_color)
 
-    fig, ax = plt.subplots(figsize=(11, 6.5))
-    ax.imshow(wc, interpolation="bilinear")
-    ax.axis("off")
-    ax.set_title(f"Keywords: {label}", fontsize=12, pad=10, fontweight="bold")
-    fig.tight_layout(pad=0.5)
+    # y-axis labels on the leftmost panel only
+    axes[0].set_yticks(range(n_themes))
+    axes[0].set_yticklabels(themes, fontsize=8.5)
 
-    safe = label.lower().replace(" ", "_").replace("&", "and").replace("/", "-")[:55]
-    out  = FIGURES_DIR / f"wordcloud_{safe}.pdf"
-    fig.savefig(out, bbox_inches="tight", dpi=180)
+    fig.suptitle(
+        "% of each publication's articles per theme, by government era\n"
+        "(column-normalised within era)",
+        fontsize=11, y=1.01,
+    )
+
+    # Shared colorbar
+    cbar = fig.colorbar(
+        plt.cm.ScalarMappable(
+            cmap="Blues",
+            norm=plt.Normalize(vmin=0, vmax=vmax_global),
+        ),
+        ax=axes, shrink=0.6, pad=0.02, label="% of outlet's articles",
+    )
+
+    fig.tight_layout()
+    out = FIGURES_DIR / "pub_share_by_era.pdf"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close()
+    print(f"    Saved {out.name}")
+
+    # ── Also print the numbers ────────────────────────────────────────────────
+    print("\n  Column-normalised % by era:")
+    for era in eras:
+        pub_totals = df[(df["era_norm"] == era) & (df["doc_type"] == "editorial")]["pub"]\
+            .value_counts().reindex(pubs, fill_value=0)
+        print(f"\n  {era}  (totals: {dict(zip(pubs, pub_totals.values))})")
+        for i, grp in enumerate(themes):
+            row_str = "  ".join(
+                f"{pubs[j]}:{matrices[era][i,j]:.0f}%" for j in range(n_pubs)
+                if not np.isnan(matrices[era][i, j])
+            )
+            print(f"    {grp[:45]:45s}  {row_str}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMBINED PANEL D — all themes on one page, % of outlet era total
+# ══════════════════════════════════════════════════════════════════════════════
+def plot_all_panel_d(df: pd.DataFrame):
+    """
+    Single-page figure: 7 panels (one per thematic group) showing the
+    percentage of each publication's total articles in each era that fall
+    within the group.  Layout: 4-up top row, 3-up bottom row (slot 8 empty).
+    Single shared legend sits below both rows via ultraplot fig.legend(loc='b').
+    """
+    import ultraplot as uplt
+
+    print("  Generating combined Panel D (% era share, all groups)…")
+
+    df_ed = df[df["doc_type"] == "editorial"] if "doc_type" in df.columns else df
+    pubs  = [p for p in PUB_ORDER if p not in ("Other", "Letters")]
+
+    # Denominator: total editorial articles per outlet per era
+    era_total = (
+        df_ed.groupby(["era_norm", "pub"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(index=ERA_ORDER, columns=pubs, fill_value=0)
+    )
+
+    # Build per-group percentage tables
+    theme_names = [g for g in THEME_ORDER if g in GROUPS]
+    group_data: dict[str, pd.DataFrame] = {}
+    for grp in theme_names:
+        tids = GROUPS[grp]
+        sub  = df_ed[df_ed["topic_id"].isin(tids)]
+        raw  = (
+            sub.groupby(["era_norm", "pub"])
+            .size()
+            .unstack(fill_value=0)
+            .reindex(index=ERA_ORDER, columns=pubs, fill_value=0)
+        )
+        group_data[grp] = raw.div(era_total.replace(0, np.nan)) * 100
+
+    # Short era labels to avoid crowding
+    era_labels = ["Howard", "Rudd/\nGillard", "Abbott", "Turnb./\nMorrison", "Albanese"]
+
+    # Short theme labels for panel titles
+    short_titles = {
+        "Political leadership & party dynamics": "Political leadership",
+        "Carbon pricing & emissions policy":     "Carbon pricing",
+        "Climate science & physical impacts":    "Climate science",
+        "Energy policy & transition":            "Energy policy",
+        "Environment & biodiversity":            "Environment & biodiversity",
+        "Media, culture & society":              "Media, culture & society",
+        "International climate diplomacy":       "International diplomacy",
+    }
+
+    # ── ultraplot layout: 4 rows × 2 cols, slot 8 empty (0) ─────────────────
+    array = [
+        [1, 2],
+        [3, 4],
+        [5, 6],
+        [7, 0],   # 0 = hidden empty cell
+    ]
+    fig, axs = uplt.subplots(
+        array=array,
+        figsize=(11, 18),
+        hspace=2.4,
+        wspace=2.4,
+        sharey=False,   # each group has its own y-scale
+    )
+
+    n_eras  = len(ERA_ORDER)
+    n_pubs  = len(pubs)
+    group_w = 0.72
+    bar_w   = group_w / n_pubs
+    offsets = np.linspace(-group_w / 2 + bar_w / 2,
+                           group_w / 2 - bar_w / 2, n_pubs)
+    x       = np.arange(n_eras)
+
+    # Left column panels get the ylabel
+    LEFT_COL = {0, 2, 4, 6}
+
+    legend_handles: list = []
+    legend_labels:  list = []
+
+    for idx, (ax, grp) in enumerate(zip(axs, theme_names)):
+        data    = group_data[grp]
+        max_val = 0
+
+        for i, pub in enumerate(pubs):
+            vals = data[pub].values
+            bars = ax.bar(
+                x + offsets[i], vals,
+                width=bar_w * 0.88,
+                color=PUB_COLOR.get(pub, "#aaaaaa"),
+                edgecolor="white",
+                linewidth=0.3,
+                label=pub,
+            )
+            if idx == 0:
+                legend_handles.append(bars[0])
+                legend_labels.append(pub)
+
+            vmax_pub = float(np.nanmax(vals)) if not np.all(np.isnan(vals)) else 0
+            max_val  = max(max_val, vmax_pub)
+
+            for rect, v in zip(bars, vals):
+                if np.isnan(v) or v < 1.5:
+                    continue
+                ax.text(
+                    rect.get_x() + rect.get_width() / 2,
+                    rect.get_height() + max(max_val * 0.015, 0.4),
+                    f"{v:.0f}",
+                    ha="center", va="bottom",
+                    fontsize=8, color="#333333",
+                )
+
+        ax.format(
+            title=short_titles.get(grp, grp),
+            titleloc="c",
+            titlesize=12,
+            titleweight="bold",
+            ylabel="% of outlet's articles in era" if idx in LEFT_COL else "",
+            ylabelsize=11,
+            xticks=x,
+            xticklabels=era_labels,
+            xticklabelsize=10,
+            yticklabelsize=10,
+            ylim=(0, max(max_val * 1.22, 1)),
+            grid=False,
+            abc='A', abcloc='ul'
+        )
+
+    # ── Shared legend centred below the figure ────────────────────────────────
+    fig.legend(
+        legend_handles, legend_labels,
+        loc="b",
+        ncols=n_pubs,
+        frame=False,
+        fontsize=12,
+        handlelength=1.6,
+        handletextpad=0.6,
+        columnspacing=1.5,
+    )
+
+    fig.format(
+        suptitle="% of each outlet's articles per era devoted to each thematic group",
+        suptitlesize=13,
+    )
+
+    out = FIGURES_DIR / "panel_d_all_themes.pdf"
+    fig.savefig(out, bbox_inches="tight")
     plt.close()
     print(f"    Saved {out.name}")
 
 
-def plot_all_keyword_wordclouds(summary: pd.DataFrame):
-    """Word cloud for every thematic group (requires wordcloud package)."""
-    print("  Generating keyword word clouds…")
-    for grp_name, tids in GROUPS.items():
-        color = GROUP_COLORS.get(grp_name, "#555555")
-        plot_keyword_wordcloud(summary, tids, grp_name, group_color=color)
-
-
-def plot_all_keyword_bubbles(summary: pd.DataFrame):
-    """Convenience wrapper: generate word clouds for all groups."""
-    plot_all_keyword_wordclouds(summary)
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-# CLI
+# COMBINED PANEL D (6-theme variant) — 3×2, excludes International diplomacy
 # ══════════════════════════════════════════════════════════════════════════════
-def parse_args():
-    p = argparse.ArgumentParser(
-        description="Analyse BERTopic cluster assignments.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
+def plot_panel_d_6themes(df: pd.DataFrame):
+    """
+    2×3 version of plot_all_panel_d, excluding 'International climate diplomacy'
+    (smallest group).  Same ultraplot settings as the 4×2 version.
+    """
+    import ultraplot as uplt
+
+    print("  Generating 6-theme Panel D (3×2, no international diplomacy)…")
+
+    EXCLUDE = {"International climate diplomacy"}
+
+    df_ed = df[df["doc_type"] == "editorial"] if "doc_type" in df.columns else df
+    pubs  = [p for p in PUB_ORDER if p not in ("Other", "Letters")]
+
+    # Denominator: total editorial articles per outlet per era
+    era_total = (
+        df_ed.groupby(["era_norm", "pub"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(index=ERA_ORDER, columns=pubs, fill_value=0)
     )
-    p.add_argument("--mode", choices=["overview", "timeline", "cluster", "group", "bubbles", "all"],
-                   default="all",
-                   help="Analysis mode (default: all)")
-    p.add_argument("--id", type=int, nargs="+", metavar="N",
-                   help="Topic ID(s) for --mode cluster")
-    p.add_argument("--name", type=str, metavar="NAME",
-                   help="Group name (or substring) for --mode group")
-    p.add_argument("--list-groups", action="store_true",
-                   help="List available thematic groups and exit")
-    return p.parse_args()
+
+    # Build per-group percentage tables (6 themes only)
+    theme_names = [g for g in THEME_ORDER if g in GROUPS and g not in EXCLUDE]
+    group_data: dict[str, pd.DataFrame] = {}
+    for grp in theme_names:
+        tids = GROUPS[grp]
+        sub  = df_ed[df_ed["topic_id"].isin(tids)]
+        raw  = (
+            sub.groupby(["era_norm", "pub"])
+            .size()
+            .unstack(fill_value=0)
+            .reindex(index=ERA_ORDER, columns=pubs, fill_value=0)
+        )
+        group_data[grp] = raw.div(era_total.replace(0, np.nan)) * 100
+
+    era_labels = ["Howard", "Rudd/\nGillard", "Abbott", "Turnb./\nMorrison", "Albanese"]
+
+    short_titles = {
+        "Political leadership & party dynamics": "Political leadership",
+        "Carbon pricing & emissions policy":     "Carbon pricing",
+        "Climate science & physical impacts":    "Climate science",
+        "Energy policy & transition":            "Energy policy",
+        "Environment & biodiversity":            "Environment & biodiversity",
+        "Media, culture & society":              "Media, culture & society",
+    }
+
+    # ── 2×3 layout — all 6 cells filled, no empty slot ───────────────────────
+    array = [
+        [1, 2, 3],
+        [4, 5, 6],
+    ]
+    fig, axs = uplt.subplots(
+        array=array,
+        figsize=(16, 9),
+        hspace=2.4,
+        wspace=2.4,
+        sharey=False,
+    )
+
+    n_eras  = len(ERA_ORDER)
+    n_pubs  = len(pubs)
+    group_w = 0.72
+    bar_w   = group_w / n_pubs
+    offsets = np.linspace(-group_w / 2 + bar_w / 2,
+                           group_w / 2 - bar_w / 2, n_pubs)
+    x       = np.arange(n_eras)
+
+    LEFT_COL = {0, 3}   # left-column indices in a 2×3 grid
+
+    legend_handles: list = []
+    legend_labels:  list = []
+
+    for idx, (ax, grp) in enumerate(zip(axs, theme_names)):
+        data    = group_data[grp]
+        max_val = 0
+
+        for i, pub in enumerate(pubs):
+            vals = data[pub].values
+            bars = ax.bar(
+                x + offsets[i], vals,
+                width=bar_w * 0.88,
+                color=PUB_COLOR.get(pub, "#aaaaaa"),
+                edgecolor="white",
+                linewidth=0.3,
+                label=pub,
+            )
+            if idx == 0:
+                legend_handles.append(bars[0])
+                legend_labels.append(pub)
+
+            vmax_pub = float(np.nanmax(vals)) if not np.all(np.isnan(vals)) else 0
+            max_val  = max(max_val, vmax_pub)
+
+            for rect, v in zip(bars, vals):
+                if np.isnan(v) or v < 1.5:
+                    continue
+                ax.text(
+                    rect.get_x() + rect.get_width() / 2,
+                    rect.get_height() + max(max_val * 0.015, 0.4),
+                    f"{v:.0f}",
+                    ha="center", va="bottom",
+                    fontsize=8, color="#333333",
+                )
+
+        ax.format(
+            title=short_titles.get(grp, grp),
+            titleloc="c",
+            titlesize=12,
+            titleweight="bold",
+            ylabel="% of outlet's articles in era" if idx in LEFT_COL else "",
+            ylabelsize=11,
+            xticks=x,
+            xticklabels=era_labels,
+            xticklabelsize=10,
+            yticklabelsize=10,
+            ylim=(0, max(max_val * 1.22, 1)),
+            grid=False,
+            abc="A", abcloc="ul",
+        )
+
+    # ── Shared legend centred below the figure ────────────────────────────────
+    fig.legend(
+        legend_handles, legend_labels,
+        loc="b",
+        ncols=n_pubs,
+        frame=False,
+        fontsize=12,
+        handlelength=1.6,
+        handletextpad=0.6,
+        columnspacing=1.5,
+    )
+
+    fig.format(
+        suptitle="% of each outlet's articles per era devoted to each thematic group",
+        suptitlesize=13,
+    )
+
+    out = FIGURES_DIR / "panel_d_6themes.pdf"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close()
+    print(f"    Saved {out.name}")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ══════════════════════════════════════════════════════════════════════════════
 def main():
-    args = parse_args()
-
     print("Loading data…")
     df, summary = load_data()
     print(f"  {len(df):,} articles, {df['topic_id'].nunique()} topics\n")
 
-    # Build group mapping from the topic_group column (avoids hardcoding)
+    # Ensure doc_type column exists (australian-no-letters has no letters rows)
+    if "doc_type" not in df.columns:
+        df["doc_type"] = "editorial"
+
     GROUPS.update(build_groups(df))
+    print(f"  Themes loaded: {list(GROUPS.keys())}\n")
 
-    if args.list_groups:
-        print("Available thematic groups:")
-        for name, tids in GROUPS.items():
-            print(f"  '{name}'  →  topics {tids}")
-        sys.exit(0)
+    print("Generating publication share matrix (column-normalised)…")
+    plot_pub_share_matrix(df)
 
-    mode = args.mode
+    print("Generating pub share by era…")
+    plot_pub_share_by_era(df)
 
-    if mode in ("overview", "all"):
-        plot_overview(df, summary)
+    print("Generating Political Leadership keyword co-occurrence analysis…")
+    plot_t00_keyword_cooccurrence(df, summary)
 
-    if mode in ("timeline", "all"):
-        print("Generating per-group timeline figures…")
-        plot_timeline_all(df, summary)
+    # print(f"\nGenerating deep-dives for all {len(GROUPS)} thematic groups…")
+    # for grp_name, tids in GROUPS.items():
+    #     print(f"  Deep-dive: {grp_name}")
+    #     plot_cluster_deepdive(df, summary, tids, grp_name)
 
-    if mode == "cluster":
-        if not args.id:
-            print("Error: --mode cluster requires --id N [N ...]")
-            sys.exit(1)
-        for tid in args.id:
-            lbl = short_label(summary, tid)
-            print(f"Deep-dive: {lbl}")
-            plot_cluster_deepdive(df, summary, [tid], lbl)
+    # print("\nGenerating combined Panel D (all themes, % era share)…")
+    # plot_all_panel_d(df)
 
-    if mode == "group":
-        if not args.name:
-            print("Error: --mode group requires --name 'Group name'")
-            sys.exit(1)
-        matches = {k: v for k, v in GROUPS.items()
-                   if args.name.lower() in k.lower()}
-        if not matches:
-            print(f"No group matching '{args.name}'. Use --list-groups to see options.")
-            sys.exit(1)
-        for grp_name, tids in matches.items():
-            print(f"Deep-dive for group: {grp_name}")
-            plot_cluster_deepdive(df, summary, tids, grp_name)
-
-    if mode in ("bubbles", "all"):
-        print("Generating bubble charts…")
-        plot_corpus_bubbles(df, summary)
-        plot_all_keyword_bubbles(summary)
-
-    if mode == "all":
-        print(f"\nGenerating deep-dives for all {len(GROUPS)} thematic groups…")
-        for grp_name, tids in GROUPS.items():
-            print(f"  {grp_name}")
-            plot_cluster_deepdive(df, summary, tids, grp_name)
+    print("\nGenerating combined Panel D (6-theme 3×2 variant)…")
+    plot_panel_d_6themes(df)
 
     print(f"\nDone. All figures saved to {FIGURES_DIR}/")
 

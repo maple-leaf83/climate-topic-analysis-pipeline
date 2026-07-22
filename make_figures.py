@@ -1,8 +1,9 @@
 """
 make_figures.py
-Generates Figures 2a, 2b, 2c for "A Climate of Opinion"
-Reads data/article_catalogue.csv (Include articles only)
-Outputs PDF + PNG to figures/
+Generates Figures 2a and 2b for "A Climate of Opinion"
+Reads data/articles_scored.csv (Include articles only) and
+data/letters/topic_assignments.csv for the letters series.
+Outputs PDF to figures/
 
 Usage:
     python make_figures.py
@@ -15,14 +16,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
+from pathlib import Path
 
-from config import CATALOGUE_CSV, FIGURES_DIR
+from config import CATALOGUE_CSV, FIGURES_DIR, DATA_DIR
 
 FIGURES_DIR.mkdir(exist_ok=True)
 
-# ── Load data ──────────────────────────────────────────────────────────────────
+# ── Load editorial/opinion corpus ─────────────────────────────────────────────
 df_all = pd.read_csv(CATALOGUE_CSV)
 df = df_all[df_all["final_status"].str.contains("Include")].copy()
+
+# ── Load letters corpus ───────────────────────────────────────────────────────
+LETTERS_CSV = DATA_DIR / "letters" / "topic_assignments.csv"
+df_letters = pd.read_csv(LETTERS_CSV) if LETTERS_CSV.exists() else pd.DataFrame()
+if not df_letters.empty:
+    df_letters["year"] = pd.to_numeric(df_letters["year"], errors="coerce")
+    df_letters = df_letters[df_letters["year"].between(1987, 2026)].copy()
+    print(f"[letters] {len(df_letters):,} letters loaded")
 
 
 def norm_pub(p: str):
@@ -92,6 +102,8 @@ def fig2b():
     year_range = list(range(min(years), max(years) + 1))
 
     fig, ax = plt.subplots(figsize=(9, 4.5))
+
+    # Editorial/opinion lines — one per publication
     for pub, color in zip(PUBS, COLORS):
         sub = df[df["pub"] == pub]
         if len(sub) == 0:
@@ -101,6 +113,13 @@ def fig2b():
         ax.plot(year_range, pct, color=color, linewidth=1.8, label=pub, alpha=0.9)
         ax.fill_between(year_range, pct, alpha=0.08, color=color)
 
+    # Letters line — all Australian titles pooled, dashed
+    if not df_letters.empty:
+        yearly_l = df_letters.groupby("year").size().reindex(year_range, fill_value=0)
+        pct_l = yearly_l / len(df_letters) * 100
+        ax.plot(year_range, pct_l, color="#555555", linewidth=1.4,
+                linestyle="--", label="Letters (all AU)", alpha=0.85)
+
     for yr in ELECTIONS:
         if yr in year_range:
             ax.axvline(yr, color="grey", linewidth=0.6, linestyle=":", alpha=0.7)
@@ -108,8 +127,7 @@ def fig2b():
             fontsize=7, color="grey", va="top")
 
     ax.set_xlabel("Year")
-    ax.set_ylabel("% of publication's total analysis-corpus articles")
-    # ax.set_title("Figure 2b — Temporal distribution of climate coverage by source")
+    ax.set_ylabel("% of each source's total articles")
     ax.set_xlim(min(year_range), max(year_range))
     ax.set_xticks(range(min(year_range), max(year_range) + 1, 2))
     ax.tick_params(axis="x", rotation=45)
@@ -184,5 +202,4 @@ def fig2c():
 if __name__ == "__main__":
     fig2a()
     fig2b()
-    fig2c()
     print(f"\nAll figures saved to {FIGURES_DIR}/")
