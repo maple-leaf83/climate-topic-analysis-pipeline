@@ -18,19 +18,16 @@ Method:
 Significance threshold: |z| > 2  (≈ p < 0.05, binomial test)
 
 Usage:
-    python outlet_topic_attention.py                  # 5 outlets incl. letters
-    python outlet_topic_attention.py --exclude-letters
+    python outlet_topic_attention.py
 
 Outputs (written relative to repo root via config.py):
-  data/combined/outlet_observed_counts.csv
-  data/combined/outlet_representation_ratios.csv
-  data/combined/outlet_binomial_zscores.csv
+  data/australian-no-letters/outlet_observed_counts.csv
+  data/australian-no-letters/outlet_representation_ratios.csv
+  data/australian-no-letters/outlet_binomial_zscores.csv
   figures/cluster_analysis/outlet_topic_attention_heatmap.pdf
   figures/cluster_analysis/outlet_topic_attention_dotplot.pdf
 """
 
-import argparse
-import sys
 import warnings
 import pandas as pd
 import numpy as np
@@ -45,43 +42,35 @@ from scipy.stats import chi2_contingency
 
 from config import DATA_DIR, FIGURES_DIR
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
-parser = argparse.ArgumentParser()
-parser.add_argument("--exclude-letters", action="store_true",
-                    help="Exclude Letters to Editor from the analysis")
-args = parser.parse_args()
-
-INCLUDE_LETTERS = not args.exclude_letters
-
 # ── Paths ─────────────────────────────────────────────────────────────────────
-DATA_PATH    = DATA_DIR / "combined-no-letters" / "topic_assignments.csv"
-LETTERS_PATH = DATA_DIR / "letters"             / "topic_assignments.csv"
-SUMMARY_PATH = DATA_DIR / "combined-no-letters" / "topic_summary.csv"
-FIG_DIR      = FIGURES_DIR / "cluster_analysis"
+DATA_PATH = DATA_DIR / "australian-no-letters" / "topic_assignments.csv"
+OUT_DIR   = DATA_DIR / "australian-no-letters"
+FIG_DIR   = FIGURES_DIR / "cluster_analysis"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Outlets ───────────────────────────────────────────────────────────────────
-EDITORIAL_OUTLETS = [
-    "The Guardian",
-    "The Age",
-    "The Australian",
-    "Sydney Morning Herald",
-    "Canberra Times",
-]
-LETTERS_LABEL = "Letters to Editor"
+# ── Outlets (canonical names matching publication column in assignments CSV) ───
+OUTLETS = ["The Australian", "The Age", "Sydney Morning Herald", "Canberra Times"]
 
-OUTLETS = EDITORIAL_OUTLETS + ([LETTERS_LABEL] if INCLUDE_LETTERS else [])
-
+# Seaborn "colorblind" palette (Wong 2011)
 OUTLET_COLORS = {
-    "The Guardian":           "#1a6e3c",
-    "The Age":                "#1f4e79",
-    "The Australian":         "#e08214",
-    "Sydney Morning Herald":  "#7b2d8b",
-    "Canberra Times":         "#c55a11",
-    LETTERS_LABEL:            "#8B4513",   # brown
+    "The Australian":      "#0173b2",
+    "The Age":             "#de8f05",
+    "Sydney Morning Herald": "#029e73",
+    "Canberra Times":      "#d55e00",
 }
 
-NOISE_GROUP = "Noise"
+NOISE_GROUPS = {"Noise"}
+
+# Preferred display order for rows (matches THEME_ORDER in analyse_clusters.py)
+THEME_ORDER = [
+    "Political leadership & party dynamics",
+    "Carbon pricing & emissions policy",
+    "Climate science & physical impacts",
+    "Energy policy & transition",
+    "Environment & biodiversity",
+    "Media, culture & society",
+    "International climate diplomacy",
+]
 
 # ── Font ──────────────────────────────────────────────────────────────────────
 _available = {f.name for f in fm.fontManager.ttflist}
@@ -94,38 +83,24 @@ plt.rcParams.update({
     "ytick.labelsize": 9,
 })
 
-# ── Load editorials ───────────────────────────────────────────────────────────
+# ── Load data ─────────────────────────────────────────────────────────────────
 df = pd.read_csv(DATA_PATH)
-df = df[df["publication"].isin(EDITORIAL_OUTLETS)].copy()
-
-# ── Load & append letters ─────────────────────────────────────────────────────
-if INCLUDE_LETTERS:
-    letters = pd.read_csv(LETTERS_PATH)
-    # Add group column from topic_summary if not already present
-    if "topic_group" not in letters.columns:
-        summary = pd.read_csv(SUMMARY_PATH)[["topic_id", "Group"]].rename(
-            columns={"Group": "topic_group"}
-        )
-        letters = letters.merge(summary, on="topic_id", how="left")
-    letters["publication"] = LETTERS_LABEL
-    df = pd.concat([df, letters], ignore_index=True)
-    print(f"Letters appended: {len(letters):,} articles → {LETTERS_LABEL}")
-
-# ── Filter noise ──────────────────────────────────────────────────────────────
-df = df[df["topic_group"] != NOISE_GROUP].copy()
+df = df[df["publication"].isin(OUTLETS)].copy()
+df = df[df["theme"].notna() & ~df["theme"].isin(NOISE_GROUPS)].copy()
 
 total = len(df)
 print(f"Articles (noise excluded): {total:,}")
 print(f"Outlets:\n{df['publication'].value_counts().to_string()}")
-print(f"\nGroups ({df['topic_group'].nunique()}): {sorted(df['topic_group'].unique())}\n")
+print(f"\nGroups ({df['theme'].nunique()}): {sorted(df['theme'].unique())}\n")
 
 # ── Corpus-level expected proportions ─────────────────────────────────────────
 p_exp = df["publication"].value_counts() / total
+p_exp = p_exp.reindex(OUTLETS)
 print("Expected proportions (corpus share):")
 print(p_exp.round(4).to_string())
 
 # ── Contingency table ─────────────────────────────────────────────────────────
-ct = pd.crosstab(df["topic_group"], df["publication"])[OUTLETS]
+ct = pd.crosstab(df["theme"], df["publication"])[OUTLETS]
 n_i = ct.sum(axis=1)
 
 # ── Representation ratios ─────────────────────────────────────────────────────
@@ -141,33 +116,31 @@ for outlet in OUTLETS:
     z[outlet] = (po - pe) / se
 
 # ── Save CSVs ─────────────────────────────────────────────────────────────────
-suffix = "" if INCLUDE_LETTERS else "_no_letters"
-ct.to_csv(DATA_DIR / "combined-no-letters" / f"outlet_observed_counts{suffix}.csv")
-ratio.round(4).to_csv(DATA_DIR / "combined-no-letters" / f"outlet_representation_ratios{suffix}.csv")
-z.round(3).to_csv(DATA_DIR / "combined-no-letters" / f"outlet_binomial_zscores{suffix}.csv")
-print(f"\nSaved CSVs  (suffix='{suffix}')")
+ct.to_csv(OUT_DIR / "outlet_observed_counts.csv")
+ratio.round(4).to_csv(OUT_DIR / "outlet_representation_ratios.csv")
+z.round(3).to_csv(OUT_DIR / "outlet_binomial_zscores.csv")
+print("Saved CSVs")
 
 # ── Omnibus chi-square test of independence ────────────────────────────────
 chi2_stat, p_val, dof, expected = chi2_contingency(ct)
-exp_min  = expected.min()
-exp_low  = (expected < 5).sum().sum()
+exp_min = expected.min()
+exp_low = (expected < 5).sum().sum()
 print(f"\n── Pearson chi-square (omnibus) ──")
 print(f"  χ²({dof}) = {chi2_stat:.2f},  p = {p_val:.2e}")
 print(f"  Min expected cell count: {exp_min:.2f}  |  Cells < 5: {exp_low}")
-chi2_path = DATA_DIR / "combined-no-letters" / f"outlet_chi2{suffix}.txt"
-chi2_path.write_text(
+(OUT_DIR / "outlet_chi2.txt").write_text(
     f"chi2={chi2_stat:.4f}\ndf={dof}\np={p_val:.4e}\n"
     f"expected_min={exp_min:.4f}\ncells_below_5={int(exp_low)}\n"
 )
-print(f"  Saved → {chi2_path}")
 
 print("\n── Representation Ratios ──")
 print(ratio.round(2).to_string())
 print("\n── Binomial z-scores ──")
 print(z.round(1).to_string())
 
-# ── Sort rows by Guardian z-score (descending) ───────────────────────────────
-row_order  = z["The Guardian"].sort_values(ascending=False).index
+# ── Row order: follow THEME_ORDER, then any remaining groups ─────────────────
+row_order  = [g for g in THEME_ORDER if g in z.index] + \
+             [g for g in z.index if g not in THEME_ORDER]
 z_plot     = z.loc[row_order]
 ratio_plot = ratio.loc[row_order]
 
@@ -180,7 +153,7 @@ z_vlim     = float(np.percentile(np.abs(z_plot.values), 95))
 
 fig, axes = plt.subplots(
     1, 2,
-    figsize=(14 if INCLUDE_LETTERS else 12, 5.5),
+    figsize=(10, 5),
     gridspec_kw={"width_ratios": [1, 1], "wspace": 0.06},
 )
 
@@ -210,7 +183,7 @@ draw_heatmap(axes[1], z_plot.round(1),
 axes[1].set_yticklabels([])
 
 fig.text(0.5, -0.03,
-         "Rows sorted by Guardian z-score (descending).  "
+         "Rows in theme-order.  "
          "Red = over-represented relative to corpus share;  Blue = under-represented.",
          ha="center", fontsize=8, color="#555555", style="italic")
 fig.suptitle("Outlet attention by topic group", fontsize=13, fontweight="bold", y=1.01)
@@ -219,15 +192,15 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     plt.tight_layout()
 
-stem1 = FIG_DIR / f"outlet_topic_attention_heatmap{suffix}"
-fig.savefig(str(stem1) + ".pdf", bbox_inches="tight", dpi=300)
+fig.savefig(str(FIG_DIR / "outlet_topic_attention_heatmap.pdf"), bbox_inches="tight", dpi=300)
 plt.close()
-print(f"\nHeatmap → {stem1}.pdf")
+print(f"\nHeatmap → outlet_topic_attention_heatmap.pdf")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Figure 2: Dot plot (faceted by outlet, sqrt-transformed x-axis)
 # ═══════════════════════════════════════════════════════════════════════════════
-SIG_THRESHOLD = 2.0
+R_HIGH = 1.25
+R_LOW  = 0.75
 
 groups   = list(row_order)
 n_groups = len(groups)
@@ -236,8 +209,8 @@ y_pos    = {g: i for i, g in enumerate(groups)}
 def zsqrt(val):
     return float(np.sign(val) * np.sqrt(abs(val)))
 
-n_panels   = len(OUTLETS)
-fig_width  = 3.0 * n_panels + 1.5
+n_panels  = len(OUTLETS)
+fig_width = 3.0 * n_panels + 1.5
 fig2, axes2 = plt.subplots(
     1, n_panels,
     figsize=(fig_width, 6),
@@ -258,11 +231,12 @@ for ax, outlet in zip(axes2, OUTLETS):
         y     = y_pos[group]
         z_val = float(z.loc[group, outlet])
         x_val = zsqrt(z_val)
+        r_val = float(ratio.loc[group, outlet])
 
-        if z_val > SIG_THRESHOLD:
+        if r_val > R_HIGH:
             ax.scatter(x_val, y, marker=">", s=90, color=color,
                        zorder=3, linewidths=0)
-        elif z_val < -SIG_THRESHOLD:
+        elif r_val < R_LOW:
             ax.scatter(x_val, y, marker="<", s=90, color=color,
                        zorder=3, linewidths=0)
         else:
@@ -272,15 +246,10 @@ for ax, outlet in zip(axes2, OUTLETS):
     ax.axvline(0, color="#888888", linewidth=0.8, linestyle="--", zorder=1)
     for yg in range(n_groups):
         ax.axhline(yg, color="#e0e0e0", linewidth=0.5, zorder=0)
-
-    sig_x = zsqrt(SIG_THRESHOLD)
-    ax.axvspan(-sig_x, sig_x, color="#f5f5f5", zorder=0)
-
     ax.set_xlim(X_LIM)
     ax.set_ylim(-0.8, n_groups - 0.2)
     ax.set_xticks(SQRT_TICKS)
     ax.set_xticklabels(TICK_LABELS, fontsize=7.5)
-    # Wrap long outlet names for panel titles
     title_str = outlet.replace(" ", "\n") if len(outlet) > 12 else outlet
     ax.set_title(title_str, fontsize=9.5, fontweight="bold", color=color, pad=8)
     ax.tick_params(axis="y", length=0)
@@ -292,17 +261,18 @@ axes2[0].set_yticklabels(groups, fontsize=8.5)
 axes2[0].tick_params(axis="y", length=0, pad=4)
 
 fig2.text(0.5, -0.02,
-          "Effect size  (z-score, square-root transformed axis)",
-          ha="center", fontsize=9, color="#444444")
+          "Effect size  (z-score, square-root transformed axis)  —  "
+          "marker shape indicates representation ratio r, not z-score significance",
+          ha="center", fontsize=8.5, color="#444444")
 
 legend_elements = [
     Line2D([0], [0], marker=">", color="w", markerfacecolor="#555555",
-           markersize=9, label="Over-represented  (z > 2)"),
+           markersize=9, label=r"Substantially over-represented  ($r > 1.25$)"),
     Line2D([0], [0], marker="<", color="w", markerfacecolor="#555555",
-           markersize=9, label="Under-represented  (z < −2)"),
+           markersize=9, label=r"Substantially under-represented  ($r < 0.75$)"),
     Line2D([0], [0], marker="s", color="w", markerfacecolor="none",
            markeredgecolor="#555555", markeredgewidth=1.2,
-           markersize=9, label="Not significant  (|z| ≤ 2)"),
+           markersize=9, label=r"Within expected range  ($0.75 \leq r \leq 1.25$)"),
 ]
 fig2.legend(handles=legend_elements, loc="lower center", ncol=3,
             frameon=False, fontsize=8.5, bbox_to_anchor=(0.5, -0.1))
@@ -314,8 +284,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     plt.tight_layout()
 
-stem2 = FIG_DIR / f"outlet_topic_attention_dotplot{suffix}"
-fig2.savefig(str(stem2) + ".pdf", bbox_inches="tight", dpi=300)
+fig2.savefig(str(FIG_DIR / "outlet_topic_attention_dotplot.pdf"), bbox_inches="tight", dpi=300)
 plt.close()
-print(f"Dot plot  → {stem2}.pdf")
+print(f"Dot plot  → outlet_topic_attention_dotplot.pdf")
 print(f"Font used: {FONT}")
