@@ -14,7 +14,7 @@ ST_MODEL_DIR = MODELS_DIR / "all-MiniLM-L6-v2"  # sentence transformer cache
 
 # ── Input: NewsBank PDF folders ────────────────────────────────────────────────
 # Set NEWSBANK_ROOT to the directory containing your downloaded PDF folders.
-NEWSBANK_ROOT = Path("../")   # adjust to where your folders live
+NEWSBANK_ROOT = ROOT.parent / "Data"   # PDF folders live inside Data/
 
 NEWSBANK_FOLDERS = {
     # SMH
@@ -29,11 +29,13 @@ NEWSBANK_FOLDERS = {
     "SMH_opinion":           {"publication": "Sydney Morning Herald", "content_type": "Opinion/Op-Ed"},
     "SMH_NewsReview":        {"publication": "Sydney Morning Herald", "content_type": "Opinion/Op-Ed"},
     "SMH_1987_1990":         {"publication": "Sydney Morning Herald", "content_type": "Analysis"},
+    "SMH_Editor":            {"publication": "Sydney Morning Herald", "content_type": "Editorial"},
     # The Age
+    "TheAge_Editor":                 {"publication": "The Age", "content_type": "Editorial"},
     "TheAge_PolEditor":              {"publication": "The Age", "content_type": "Columnist"},
     "TheAge_Davdison_Grattan_Ross":  {"publication": "The Age", "content_type": "Columnist"},
     "TheAge_Analysis":               {"publication": "The Age", "content_type": "Analysis"},
-    "TheAge_Letter_Insight":         {"publication": "The Age", "content_type": "Analysis"},
+    "TheAge_Letter_Insight":         {"publication": "The Age", "content_type": "Letters"},
     # Canberra Times
     "CT_Editorial":          {"publication": "Canberra Times", "content_type": "Editorial"},
     "CT_LTEditor":           {"publication": "Canberra Times", "content_type": "Letters"},
@@ -47,6 +49,7 @@ NEWSBANK_FOLDERS = {
     "Australian_Inquirer_2122":      {"publication": "The Australian", "content_type": None},  # auto-classified
     "TheAustralian_SpecificEditors": {"publication": "The Australian", "content_type": "Columnist"},
     "TheAustralian_Letters":         {"publication": "The Australian", "content_type": "Letters"},
+    "Australian_Editor": {"publication": "The Australian", "content_type": "Editorial"},
 }
 
 # ── Input: Guardian API ────────────────────────────────────────────────────────
@@ -70,7 +73,8 @@ EXCEL_OUT       = DATA_DIR / "article_catalogue_review.xlsx"
 CLIMATE_TERMS = [
     "climate change", "global warming", "climate emergency", "greenhouse",
     "carbon emission", "carbon dioxide", "co2", "net zero", "net-zero",
-    "carbon tax", "carbon price", "carbon trading", "emissions trading",
+    "carbon tax", "carbon price", "carbon pricing", "carbon trading",
+    "emissions trading", "greenhouse gas",
     "renewable energy", "fossil fuel", "coal", "natural gas", "sea level",
     "arctic", "antarctic", "glacier", "drought", "bushfire", "wildfire",
     "flood", "extreme weather", "ipcc", "paris agreement", "kyoto",
@@ -80,13 +84,35 @@ CLIMATE_TERMS = [
     "climate crisis", "carbon neutral", "zero emission",
 ]
 
+# ── Core climate identifiers (used as primary inclusion triggers) ──────────────
+# These phrases unambiguously identify climate-change discourse across four
+# dimensions: (1) canonical terms, (2) contemporary equivalents,
+# (3) scientific mechanism, (4) policy mechanisms and targets.
+# An article matching any of these ≥ CC_CORE_THRESHOLD times is included
+# regardless of whether it uses the phrase "climate change" or "global warming".
+CORE_CLIMATE_PHRASES = [
+    # Canonical identifiers
+    "climate change", "global warming",
+    # Contemporary equivalents
+    "climate emergency", "climate crisis",
+    # Scientific mechanism
+    "greenhouse gas", "ipcc",
+    # Policy mechanisms (Australian legislative context: carbon price 2012–2014,
+    # ETS proposals 2009–2010, net-zero commitments 2021–present)
+    "carbon tax", "carbon price", "carbon pricing",
+    "emissions trading", "carbon trading",
+    # International frameworks and targets
+    "paris agreement", "net zero", "net-zero",
+]
+
 # ── Inclusion criterion ────────────────────────────────────────────────────────
 # An article is included if ANY of the following hold:
-#   (a) "climate change" + "global warming" combined count >= CC_GW_THRESHOLD
-#   (b) Either phrase appears in the title
-#   (c) Either phrase appears >= 1 time AND climate_mentions >= CLIMATE_MENTIONS_THRESHOLD
-CC_GW_THRESHOLD         = 3
-CLIMATE_MENTIONS_THRESHOLD = 4
+#   (a) Any CORE_CLIMATE_PHRASE appears >= CC_CORE_THRESHOLD times (combined)
+#   (b) Any CORE_CLIMATE_PHRASE appears in the title
+#   (c) Any CORE_CLIMATE_PHRASE appears >= 1 time AND
+#       climate_mentions >= CLIMATE_MENTIONS_THRESHOLD
+CC_CORE_THRESHOLD          = 3   # formerly CC_GW_THRESHOLD (value unchanged)
+CLIMATE_MENTIONS_THRESHOLD = 3   # lowered from 4
 
 # ── CT columnist names (for auto-classification) ───────────────────────────────
 CT_COLUMNISTS = {

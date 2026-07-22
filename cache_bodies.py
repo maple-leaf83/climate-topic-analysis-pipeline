@@ -109,6 +109,18 @@ def build_cache(fmt: str) -> pd.DataFrame:
             })
 
     df = pd.DataFrame(all_records)
+
+    # Deduplicate across folders — same article can appear in multiple NewsBank
+    # exports (e.g. Australian_Editor overlapping TheAustralian_SpecificEditors).
+    # Keep the first occurrence (preserves folder/filename provenance of earliest match).
+    before = len(df)
+    df = df.drop_duplicates(subset=["title", "date", "publication"], keep="first")
+    dupes = before - len(df)
+    if dupes:
+        print(f"  Deduplication: {before:,} → {len(df):,} records ({dupes:,} duplicates removed)")
+    else:
+        print(f"  Deduplication: no duplicates found across {before:,} records")
+
     _save(df, fmt)
     return df
 
