@@ -285,6 +285,7 @@ with warnings.catch_warnings():
     plt.tight_layout()
 
 fig2.savefig(str(FIG_DIR / "outlet_topic_attention_dotplot.pdf"), bbox_inches="tight", dpi=300)
+fig2.savefig(str(FIG_DIR / "outlet_topic_attention_dotplot.png"), bbox_inches="tight", dpi=150)
 plt.close()
 print(f"Dot plot  → outlet_topic_attention_dotplot.pdf")
 print(f"Font used: {FONT}")
