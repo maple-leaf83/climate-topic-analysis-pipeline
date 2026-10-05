@@ -1,30 +1,12 @@
-# A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism, 1987–2026
+# A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism
 
 **Bhavna J. Antony, Cameron Foale, Savin Chand**
 
 *Institute of Innovation, Science and Sustainability, Federation University Australia*
 
-### Abstract
+Reproducible code for the topic modelling and analysis pipeline used in:
 
-Despite an extensive literature on climate change news coverage, long-form opinion and editorial journalism has received comparatively little computational attention, particularly in the Australian context. This paper presents a longitudinal computational analysis of climate opinion discourse across four major Australian newspapers — *The Australian*, *The Age*, the *Sydney Morning Herald*, and *The Canberra Times* — comprising 9,863 articles spanning 1987 to 2026. A central methodological contribution is the application of `nomic-embed-text-v1` — a sentence embedding model with an 8,192-token context window — paired with BERTopic for topic discovery. Standard transformer encoders truncate documents at 512 tokens (approximately 375 words), discarding the argumentative body of most editorial texts; the long-context embedder encodes each article in full, preserving the complete rhetorical arc in a single dense representation. The model recovered 84 topics, which were manually grouped into 7 thematic categories. Differential outlet attention was assessed using binomial representation ratios and z-scores against each publication's corpus-level baseline.
-
-The analysis shows that climate change in Australian opinion journalism is overwhelmingly discussed through a political lens: the *Political Leadership & Party Dynamics* group accounts for 35.6% of all articles, suggesting the discourse is structured primarily around political conflict rather than scientific evidence or ecological consequence. Outlet-level differences in thematic emphasis are structural and stable across government eras: *The Australian* is systematically under-represented in climate science (r = 0.74) and carbon pricing (r = 0.78) relative to its corpus share, while *The Canberra Times* shows persistent concentration in environment and biodiversity coverage (r = 2.04). Temporal co-occurrence analysis reveals that climate science language has become increasingly embedded within political leadership discourse since the Turnbull–Morrison era, suggesting that attribution science is beginning to reshape the register of Australian climate commentary without displacing the dominant political frame. These findings provide the first computational characterisation of Australian climate opinion journalism at scale and establish a principled thematic scaffold for subsequent framing and stance analyses.
-
----
-
-### Key Results
-
-![Outlet attention by topic group](outlet_topic_attention_dotplot-1.png)
-
-*Binomial effect sizes (z-score, square-root transformed axis) for each outlet–topic-group combination. Filled triangles indicate over- (▶, r > 1.25) or under-representation (◀, r < 0.75) relative to the outlet's corpus share; open squares indicate the outlet is within the expected range.*
-
-The outlet–topic structure reveals systematic editorial divergence consistent with political parallelism. *The Australian* is over-represented in *Political Leadership & Party Dynamics* (r = 1.26) and under-represented in *Climate Science & Physical Impacts* (r = 0.74) and *Environment & Biodiversity* (r = 0.50) across every government era. *The Canberra Times* shows the most pronounced specialisation, with the largest representation ratio in the corpus for *Environment & Biodiversity* (r = 2.04), consistent with its proximity to Commonwealth environmental governance. *International Climate Diplomacy* is the only group for which no outlet crosses either threshold.
-
----
-
-Reproducible code for the corpus construction and topic modelling pipeline used in:
-
-> Antony, B., Foale, C. & Chand, S. (in prep). *A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism, 1987–2026.*
+> Antony, B., Foale, C. & Chand, S. (in prep). *A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism, 2001–2025.*
 
 Code repository: https://github.com/maple-leaf83/climate-topic-analysis-pipeline
 
@@ -32,105 +14,74 @@ Code repository: https://github.com/maple-leaf83/climate-topic-analysis-pipeline
 
 ## Overview
 
-This pipeline parses, scores, and topic-models climate-related editorial and opinion articles from four Australian broadsheet publications spanning 1987–2026:
+This pipeline takes scored CSV corpora of climate opinion articles and runs BERTopic topic modelling, taxonomy harmonisation, representation analysis, co-occurrence analysis, temporal analysis, and figure generation.
 
-| Publication | Access method |
+**The pipeline assumes you already have two scored article corpora as CSV files:**
+
+| File | Contents |
 |---|---|
-| The Australian | NewsBank Australia (PDF export) |
-| The Age | NewsBank Australia (PDF export) |
-| Sydney Morning Herald | NewsBank Australia (PDF export) |
-| The Canberra Times | NewsBank Australia (PDF export) |
+| `data/articles_scored_australian.csv` | AU broadsheet opinion articles after relevance screening |
+| `data/guardian/guardian_articles_scored.csv` | *Guardian Australia* opinion articles after relevance screening |
 
-The final corpus contains **9,863** editorial and opinion articles after relevance screening.
-
-> **Note:** Article body text is not included in this repository due to NewsBank licensing restrictions. The pipeline scripts are provided for transparency and reproducibility; to run them you will need your own NewsBank institutional access.
+Relevance scoring scripts are included for transparency (see [Scoring](#1-relevance-scoring) below), but article body text is not included in this repository due to NewsBank and Guardian licensing restrictions.
 
 ---
 
 ## Pipeline
 
-The pipeline runs in four steps:
-
 ```
-1. [manual] download NewsBank PDFs
-2. cache_bodies.py            →  newsbank_bodies.parquet
-3. build_articles_scored.py   →  data/articles_scored.csv
-4. run_bertopic.py            →  data/australian-no-letters/topic_assignments.csv
+1. score_and_classify.py        →  data/articles_scored_australian.csv
+   guardian_build_scored.py     →  data/guardian/guardian_articles_scored.csv
+
+2. run_bertopic.py              →  data/australian-no-letters/topic_assignments.csv
+                                   data/guardian/topic_assignments_guardian.csv
+
+3. build_topic_keywords.py      →  topic_keywords.xlsx
+
+4. report_topics.py             →  data/topic_combined.csv
+
+5. outlet_topic_attention.py    →  data/australian-no-letters/outlet_binomial_zscores.csv
+   outlet_attention_comparison.py
+   era_stratified_representation.py
+
+6. compare_corpora.py           →  figures/comparison/
+
+7. temporal_comparison.py       →  figures/comparison/temporal_*.pdf
+
+8. cohesion_analysis.py         →  data/*/cohesion_scores_*.csv
+   analyse_cohesion.py          →  figures/cohesion/
+
+9. make_prisma.py               →  figures/fig1_prisma.pdf
+   make_prisma_guardian.py      →  figures/fig_prisma_guardian.pdf
 ```
 
 ---
 
 ## Setup
 
-### 1. Install system dependency
-
-`parse_newsbank.py` calls `pdftotext` (part of `poppler-utils`) to extract text from NewsBank PDF exports. Install it before running the pipeline:
-
-```bash
-# Ubuntu/Debian
-sudo apt install poppler-utils
-
-# macOS
-brew install poppler
-```
-
-### 2. Install Python packages
+### Install Python packages
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure paths
+### Configure paths
 
-Edit `config.py` and set `NEWSBANK_ROOT` to the directory containing your downloaded NewsBank PDF folders.
+Edit `config.py` to set corpus paths and any local embedding model paths if running offline.
 
 ---
 
 ## Running the pipeline
 
-### Step 1 — Download NewsBank PDFs (manual)
+### 1. Relevance scoring
 
-Log in to [NewsBank Australia](https://infoweb.newsbank.com) and export PDF bundles for each publication and content category as configured in `NEWSBANK_FOLDERS` in `config.py`. Place the folders under `NEWSBANK_ROOT`.
-
-### Step 2 — Cache NewsBank body text
+**Australian corpus**
 
 ```bash
-python cache_bodies.py
+python score_and_classify.py
 ```
 
-Parses all NewsBank PDFs using `pdftotext` and writes body text to `data/newsbank_bodies.parquet`. Run with `--force` to rebuild from scratch.
-
-### Step 3 — Build scored article catalogue
-
-```bash
-python build_articles_scored.py
-```
-
-Applies the relevance criterion, assigns content-type classifications, and writes `data/articles_scored.csv`.
-
-### Step 4 — Run BERTopic topic modelling
-
-```bash
-python run_bertopic.py --corpus australian --exclude-letters
-```
-
-Outputs `data/australian-no-letters/topic_assignments.csv`.
-
-Key options:
-
-| Flag | Default | Description |
-|---|---|---|
-| `--embedding-model` | `nomic-ai/nomic-embed-text-v1` | Sentence embedding model (8,192-token context) |
-| `--min-topic-size` | `50` | Minimum cluster size |
-| `--outlier-strategy` | `embeddings` | Outlier reassignment method |
-| `--outlier-threshold` | `0.5` | Cosine similarity threshold for reassignment |
-| `--device` | `auto` | `cpu` or `cuda` |
-
----
-
-## Relevance criterion
-
-An article is **included** if **any** of the following hold:
+Applies the hybrid relevance criterion to raw article CSVs and writes `data/articles_scored_australian.csv`. An article is included if any of the following hold:
 
 | Condition | Rule |
 |---|---|
@@ -140,25 +91,202 @@ An article is **included** if **any** of the following hold:
 
 `climate_mentions` counts occurrences of any term in the 47-term `CLIMATE_TERMS` vocabulary defined in `config.py`.
 
+**Guardian corpus**
+
+```bash
+python guardian_build_scored.py
+```
+
+Applies equivalent relevance screening to the Guardian article CSV and writes `data/guardian/guardian_articles_scored.csv`.
+
+---
+
+### 2. BERTopic topic modelling
+
+```bash
+python run_bertopic.py --corpus australian --exclude-letters
+python run_bertopic.py --corpus guardian
+```
+
+Fits independent BERTopic models for each corpus using `nomic-embed-text-v1` (8,192-token context window), which encodes each article in full without truncation. Outlier articles are reassigned by cosine similarity to the nearest topic embedding.
+
+Outputs:
+- `data/australian-no-letters/topic_assignments.csv`
+- `data/australian-no-letters/topic_summary.csv`
+- `data/guardian/topic_assignments_guardian.csv`
+- `data/guardian/topic_summary_guardian.csv`
+- Saved models under `models/`
+
+Key options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--corpus` | `both` | `australian`, `guardian`, `both`, or `combined` |
+| `--embedding-model` | `nomic-ai/nomic-embed-text-v1` | Sentence embedding model |
+| `--au-min-topic-size` | `20` | Minimum cluster size for AU corpus |
+| `--min-topic-size` | `50` | Minimum cluster size for Guardian corpus |
+| `--outlier-strategy` | `embeddings` | Outlier reassignment method (`embeddings` or `c-tf-idf`) |
+| `--outlier-threshold` | `0.5` | Cosine similarity threshold for reassignment |
+| `--device` | `auto` | `cpu` or `cuda` |
+| `--exclude-letters` | — | Exclude letters-to-the-editor from topic modelling |
+
+> **Note:** The models were fitted on a GPU cluster. Embedding 9,863 AU articles + 5,171 Guardian articles with `nomic-embed-text-v1` at full context requires substantial RAM and benefits from a CUDA-capable GPU.
+
+---
+
+### 3. Topic keywords
+
+```bash
+python build_topic_keywords.py
+```
+
+Extracts the top-N c-TF-IDF keywords for every BERTopic topic in both corpora and writes them to `topic_keywords.xlsx`. Used during manual taxonomy harmonisation.
+
+---
+
+### 4. Topic reporting and taxonomy harmonisation
+
+```bash
+python report_topics.py
+```
+
+Loads both sets of topic assignments, applies the manually defined 7-category harmonised taxonomy (configured in `config.py` via `HARMONIZED_COLORS` and the group-name mappings), and writes:
+- `data/topic_combined.csv` — all articles with harmonised group labels
+- `data/topic_alignment.csv` — cross-corpus Jaccard alignment table
+- `figures/fig4_topic_table.pdf` — topic summary table
+
+> **Manual step:** After running `build_topic_keywords.py`, inspect the keyword output and assign each BERTopic topic to one of the 7 harmonised categories. Record the mappings in the `AU_TO_HARMONIZED` and `G_TO_HARMONIZED` dicts in `config.py` before proceeding.
+
+---
+
+### 5. Representation analysis
+
+**Outlet × topic-group binomial analysis**
+
+```bash
+python outlet_topic_attention.py
+```
+
+Computes whether each outlet devotes significantly more or less attention to each harmonised topic group than its corpus-level share would predict. Uses binomial z-scores and representation ratios *r*. Outputs to `data/australian-no-letters/` and `figures/`.
+
+**Cross-corpus outlet comparison**
+
+```bash
+python outlet_attention_comparison.py
+```
+
+Produces comparison figures of outlet-level attention between the AU and Guardian corpora.
+
+**Era-stratified representation**
+
+```bash
+python era_stratified_representation.py
+```
+
+Runs the outlet × topic-group binomial analysis separately for each government era (Howard, Rudd/Gillard, Abbott/Turnbull, Morrison, Albanese) to test whether structural differences persist across political periods.
+
+---
+
+### 6. Cross-corpus comparison and co-occurrence
+
+```bash
+python compare_corpora.py
+```
+
+Two main analyses:
+
+1. **Cross-corpus co-occurrence** — for each harmonised topic group, identifies the top 10 c-TF-IDF keywords and computes the proportion of articles per era in which each keyword co-occurs with the group's primary signal. Outputs `figures/comparison/cooccurrence_heatmap.pdf`.
+
+2. **Temporal lines by outlet** — plots yearly topic-group share for each AU outlet individually alongside the *Guardian* mean, with a dotted AU mean line. Outputs `figures/comparison/temporal_lines_by_outlet.pdf`.
+
+---
+
+### 7. Temporal analysis
+
+```bash
+python temporal_comparison.py
+```
+
+Produces era-level stacked bar charts and year-by-year topic share lines comparing the AU and Guardian corpora. Outputs to `figures/comparison/`.
+
+---
+
+### 8. Semantic cohesion analysis
+
+```bash
+python cohesion_analysis.py
+python analyse_cohesion.py
+```
+
+`cohesion_analysis.py` computes the cosine similarity between each article's embedding and its assigned harmonised group centroid for both corpora, writing `data/australian-no-letters/cohesion_scores_aus.csv` and `data/guardian/cohesion_scores_guardian.csv`.
+
+`analyse_cohesion.py` generates the cohesion boxplot figure (`figures/cohesion/cohesion_clusters.pdf`) comparing within-group embedding tightness across corpora.
+
+---
+
+### 9. PRISMA diagrams
+
+```bash
+python make_prisma.py
+python make_prisma_guardian.py
+```
+
+Generates PRISMA-style flow diagrams for each corpus's inclusion/exclusion screening.
+
 ---
 
 ## Repository structure
 
 ```
 repo/
-├── config.py                  # Paths, thresholds, folder definitions
-├── parse_newsbank.py          # NewsBank PDF parser (called by cache_bodies)
-├── cache_bodies.py            # Step 2: NewsBank body text cache builder
-├── score_and_classify.py      # Relevance scoring logic (called by build_articles_scored)
-├── build_articles_scored.py   # Step 3: scored article catalogue builder
-├── run_bertopic.py            # Step 4: BERTopic topic modelling pipeline
-├── analyse_clusters.py        # Temporal and outlet visualisations per topic group
-├── analyse_cohesion.py        # Cosine cohesion boxplot (Figure 4 in paper)
-├── outlet_topic_attention.py  # Binomial representation analysis across outlets
-├── make_figures.py            # Corpus overview figures
-├── make_prisma.py             # PRISMA flow diagram
+├── config.py                        # Paths, colour palettes, taxonomy mappings, thresholds
+│
+├── score_and_classify.py            # Step 1a: AU relevance scoring
+├── guardian_build_scored.py         # Step 1b: Guardian relevance scoring
+│
+├── run_bertopic.py                  # Step 2: BERTopic modelling (AU and Guardian)
+├── build_topic_keywords.py          # Step 3: c-TF-IDF keyword extraction
+│
+├── report_topics.py                 # Step 4: topic report and taxonomy harmonisation
+├── analyse_clusters.py              # Per-group publication/era breakdowns
+│
+├── outlet_topic_attention.py        # Step 5a: outlet binomial representation analysis
+├── outlet_attention_comparison.py   # Step 5b: cross-corpus outlet comparison
+├── era_stratified_representation.py # Step 5c: era-stratified representation
+│
+├── compare_corpora.py               # Step 6: co-occurrence and outlet temporal lines
+├── temporal_comparison.py           # Step 7: era-level and yearly temporal figures
+│
+├── cohesion_analysis.py             # Step 8a: compute cosine cohesion scores
+├── analyse_cohesion.py              # Step 8b: cohesion boxplot figure
+│
+├── make_prisma.py                   # Step 9a: PRISMA diagram (AU corpus)
+├── make_prisma_guardian.py          # Step 9b: PRISMA diagram (Guardian corpus)
+│
 ├── requirements.txt
 └── README.md
+```
+
+---
+
+## Data outputs
+
+```
+data/
+├── articles_scored_australian.csv           # AU corpus after relevance screening
+├── australian-no-letters/
+│   ├── topic_assignments.csv                # BERTopic assignments (AU)
+│   ├── topic_summary.csv                    # Topic-level c-TF-IDF summary (AU)
+│   ├── australian_topic_groups.csv          # Harmonised group labels (AU)
+│   ├── outlet_binomial_zscores.csv          # Representation z-scores
+│   ├── outlet_representation_ratios.csv     # Representation ratios r
+│   └── cohesion_scores_aus.csv              # Cosine cohesion (AU)
+└── guardian/
+    ├── guardian_articles_scored.csv         # Guardian corpus after relevance screening
+    ├── topic_assignments_guardian.csv       # BERTopic assignments (Guardian)
+    ├── topic_summary_guardian.csv           # Topic-level c-TF-IDF summary (Guardian)
+    ├── guardian_topic_groups.csv            # Harmonised group labels (Guardian)
+    └── cohesion_scores_guardian.csv         # Cosine cohesion (Guardian)
 ```
 
 ---
@@ -167,11 +295,11 @@ repo/
 
 If you use this pipeline, please cite:
 
-> Antony, B., Foale, C. & Chand, S. (in prep). *A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism, 1987–2026.*
+> Antony, B., Foale, C. & Chand, S. (in prep). *A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism, 2001–2025.*
 
 ---
 
 ## Licence
 
 Code: MIT  
-Article content: not included (subject to NewsBank licensing terms)
+Article content: not included (subject to NewsBank and Guardian licensing terms)
