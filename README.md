@@ -42,14 +42,14 @@ Relevance scoring scripts are included for transparency (see [Scoring](#1-releva
 
 5. outlet_topic_attention.py    →  data/australian-no-letters/outlet_binomial_zscores.csv
    outlet_attention_comparison.py
-   era_stratified_representation.py
+   
 
 6. compare_corpora.py           →  figures/comparison/
 
 7. temporal_comparison.py       →  figures/comparison/temporal_*.pdf
 
 8. cohesion_analysis.py         →  data/*/cohesion_scores_*.csv
-   analyse_cohesion.py          →  figures/cohesion/
+                                →  figures/cohesion/
 
 9. make_prisma.py               →  figures/fig1_prisma.pdf
    make_prisma_guardian.py      →  figures/fig_prisma_guardian.pdf
@@ -104,7 +104,7 @@ Applies equivalent relevance screening to the Guardian article CSV and writes `d
 ### 2. BERTopic topic modelling
 
 ```bash
-python run_bertopic.py --corpus australian --exclude-letters
+python run_bertopic.py --corpus australian 
 python run_bertopic.py --corpus guardian
 ```
 
