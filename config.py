@@ -5,6 +5,41 @@ Edit paths here; all other scripts import from this module.
 
 from pathlib import Path
 
+# ── Colorblind-safe palette (Okabe-Ito / Wong 2011) ───────────────────────────
+# Use these constants in ALL plotting scripts so figures are consistent.
+OKABE_ITO = {
+    "blue":          "#0072B2",
+    "orange":        "#E69F00",
+    "bluish_green":  "#009E73",
+    "sky_blue":      "#56B4E9",
+    "vermillion":    "#D55E00",
+    "reddish_purple":"#CC79A7",
+    "yellow":        "#F0E442",
+    "black":         "#000000",
+}
+
+# Harmonized thematic groups → colour
+HARMONIZED_COLORS = {
+    "Domestic Politics & Policy":    "#0072B2",   # blue
+    "International Politics":        "#56B4E9",   # sky blue
+    "International Climate Policy":  "#009E73",   # bluish green
+    "Climate Science":               "#F0E442",   # yellow
+    "Physical & Ecological Impacts": "#D55E00",   # vermillion
+    "Energy & Industry":             "#E69F00",   # orange
+    "Culture, Media & Activism":     "#CC79A7",   # reddish purple
+}
+
+# Outlet colours — 4 AU broadsheets + Guardian variants
+OUTLET_COLORS = {
+    "The Australian":        "#0072B2",   # blue
+    "The Age":               "#E69F00",   # orange
+    "Sydney Morning Herald": "#009E73",   # bluish green
+    "Canberra Times":        "#D55E00",   # vermillion
+    "The Guardian":          "#CC79A7",   # reddish purple (combined)
+    "The Guardian (AU)":     "#CC79A7",   # reddish purple
+    "The Guardian (UK)":     "#56B4E9",   # sky blue
+}
+
 # ── Root paths ─────────────────────────────────────────────────────────────────
 ROOT        = Path(__file__).parent          # repo root
 DATA_DIR    = ROOT / "data"                  # output data directory
@@ -53,18 +88,41 @@ NEWSBANK_FOLDERS = {
 }
 
 # ── Input: Guardian API ────────────────────────────────────────────────────────
-GUARDIAN_API_KEY  = "fef3eb2a-abbd-4b61-b58d-c09263627466"   # https://open-platform.theguardian.com/
-GUARDIAN_SECTIONS = ["commentisfree", "environment", "australia-news"]
+GUARDIAN_API_KEY  = "key-from-api"   # https://open-platform.theguardian.com/
 GUARDIAN_QUERIES  = ["climate change", "global warming", "climate emergency"]
 GUARDIAN_FROM     = "1999-01-01"
 GUARDIAN_TO       = "2026-04-30"
+
+# Sections and the edition label assigned to each.
+# commentisfree and environment are produced by the UK newsroom.
+# australia-news is produced by Guardian Australia.
+GUARDIAN_SECTION_EDITIONS = {
+    "commentisfree": "UK",
+    "environment":   "UK",
+    "australia-news": "AU",
+}
+GUARDIAN_SECTIONS = list(GUARDIAN_SECTION_EDITIONS.keys())  # kept for back-compat
+
+# Tone tags (Guardian taxonomy) — used to exclude straight news reporting.
+# commentisfree articles carry tone/comment by default; environment and
+# australia-news carry a mix of tone/news, tone/analysis, tone/features.
+GUARDIAN_EXCLUDE_TONES = {"tone/news"}
+GUARDIAN_INCLUDE_TONES = {
+    "tone/comment",
+    "tone/analysis",
+    "tone/features",
+    "tone/editorials",
+    "tone/letters",       # exclude if you don't want letters — remove this line
+}
 
 # ── Input files (live in parent folder, alongside the PDF folders) ─────────────
 # guardian_articles.csv and article_catalogue.csv are kept one level above the
 # repo because they are too large / licensing-sensitive to commit to git.
 PARENT_DIR      = ROOT.parent
-GUARDIAN_CSV    = PARENT_DIR / "guardian_articles.csv"
-CATALOGUE_CSV   = DATA_DIR / "articles_scored.csv"
+GUARDIAN_CSV    = PARENT_DIR / "guardian_articles.csv"       # original pull (back-compat)
+GUARDIAN_V2_CSV = PARENT_DIR / "guardian_articles_v2.csv"   # edition-tagged, tone-filtered
+CATALOGUE_CSV         = DATA_DIR / "articles_scored_australian.csv"
+GUARDIAN_CATALOGUE_CSV = DATA_DIR / "guardian" / "guardian_articles_scored.csv"
 
 # ── Output files (written into repo/data/ by the pipeline) ────────────────────
 EXCEL_OUT       = DATA_DIR / "article_catalogue_review.xlsx"
