@@ -69,7 +69,7 @@ from config import (
 
 # Prefer the scored catalogue (output of build_articles_scored.py) if it exists;
 # fall back to the legacy article_catalogue.csv for backward compatibility.
-SCORED_CSV = DATA_DIR / "articles_scored.csv"
+SCORED_CSV = DATA_DIR / "articles_scored_australian.csv"
 from cache_bodies import load_cache as _load_nb_cache
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -175,10 +175,15 @@ def build_text_corpus(catalogue: pd.DataFrame, corpus: str,
     errors between the catalogue and the raw CSVs.  Legacy catalogues without a
     'body' column fall back to the original source-file merge.
     """
-    # ── Select included editorials ────────────────────────────────────────────
+    # ── Select included articles ──────────────────────────────────────────────
     if "final_status" in catalogue.columns:
-        included = catalogue[catalogue["final_status"] == "Included-Editorial"].copy()
-        print(f"[corpus] {len(included):,} editorial articles (from final_status column)")
+        if corpus == "guardian":
+            # Guardian corpus has three content types: Included-Editorial (Opinion),
+            # Included-Environment, and Included-News.  Include all three.
+            included = catalogue[catalogue["final_status"].str.startswith("Included", na=False)].copy()
+        else:
+            included = catalogue[catalogue["final_status"] == "Included-Editorial"].copy()
+        print(f"[corpus] {len(included):,} articles (from final_status column)")
     else:
         included = catalogue[catalogue["relevance"] == "Include"].copy()
         if exclude_letters:
@@ -237,7 +242,8 @@ def build_text_corpus(catalogue: pd.DataFrame, corpus: str,
 def fit_bertopic(docs: list, min_topic_size: int = 50, nr_topics=None,
                  device: str = "auto",
                  embedding_model_path: str = "nomic-ai/nomic-embed-text-v1",
-                 batch_size: int = 256) -> tuple:
+                 batch_size: int = 256,
+                 corpus_label: str = "corpus") -> tuple:
     from bertopic import BERTopic
     from bertopic.representation import KeyBERTInspired, MaximalMarginalRelevance
     from sentence_transformers import SentenceTransformer
@@ -293,7 +299,7 @@ def fit_bertopic(docs: list, min_topic_size: int = 50, nr_topics=None,
     ]
     vectorizer = CountVectorizer(
         stop_words=list(ENGLISH_STOP_WORDS) + EXTRA_STOPWORDS,
-        ngram_range=(1, 2), min_df=5, max_df=0.85,
+        ngram_range=(1, 2), min_df=2, max_df=0.95,
     )
 
     # Two-stage representation pipeline:
@@ -324,7 +330,9 @@ def fit_bertopic(docs: list, min_topic_size: int = 50, nr_topics=None,
     # reused if BERTopic needs to be rerun with different parameters.
     # batch_size=512 is safe for an 80GB A100 with nomic-embed-text-v1;
     # raise to 1024 if GPU memory headroom is still available.
-    embed_cache = Path(embedding_model_path).parent.parent.parent / "embeddings_cache.npy"
+    _emb_dir = DATA_DIR / "embeddings"
+    _emb_dir.mkdir(parents=True, exist_ok=True)
+    embed_cache = _emb_dir / f"embeddings_cache_{corpus_label}.npy"
     if embed_cache.exists():
         embeddings = np.load(str(embed_cache))
         if embeddings.shape[0] != len(docs):
@@ -435,7 +443,8 @@ def reduce_topic_outliers(topic_model, docs: list, topics: list,
 def sample_noise_cluster(corpus_df: pd.DataFrame, topics: list,
                          n_sample: int = 100,
                          data_dir: Path = None,
-                         random_state: int = 42) -> pd.DataFrame:
+                         random_state: int = 42,
+                         corpus_suffix: str = "") -> pd.DataFrame:
     """
     Draw a random sample from the remaining noise cluster (topic == -1)
     and save to <data_dir>/noise_sample.csv for manual inspection.
@@ -462,7 +471,8 @@ def sample_noise_cluster(corpus_df: pd.DataFrame, topics: list,
     out = sample[[c for c in out_cols if c in sample.columns]]
 
     if data_dir is not None:
-        path = data_dir / "noise_sample.csv"
+        fname = f"noise_sample_{corpus_suffix}.csv" if corpus_suffix else "noise_sample.csv"
+        path = data_dir / fname
         out.to_csv(path, index=False)
         print(f"[noise] Sample → {path}")
 
@@ -472,7 +482,8 @@ def sample_noise_cluster(corpus_df: pd.DataFrame, topics: list,
 # ── Step 3: Save outputs ──────────────────────────────────────────────────────
 
 def save_topic_assignments(corpus_df: pd.DataFrame, topics: list,
-                           probs, data_dir: Path) -> pd.DataFrame:
+                           probs, data_dir: Path,
+                           corpus_suffix: str = "") -> pd.DataFrame:
     df = corpus_df.copy()
     df["topic_id"] = topics
     df["topic_prob"] = (
@@ -484,14 +495,15 @@ def save_topic_assignments(corpus_df: pd.DataFrame, topics: list,
                 "date", "year", "era", "folder", "filename",
                 "topic_id", "topic_prob"]
     out = df[[c for c in out_cols if c in df.columns]]
-    path = data_dir / "topic_assignments.csv"
+    fname = f"topic_assignments_{corpus_suffix}.csv" if corpus_suffix else "topic_assignments.csv"
+    path = data_dir / fname
     out.to_csv(path, index=False)
     print(f"[save] Assignments → {path}")
     return df
 
 
 def save_topic_summary(topic_model, corpus_df: pd.DataFrame,
-                       data_dir: Path) -> pd.DataFrame:
+                       data_dir: Path, corpus_suffix: str = "") -> pd.DataFrame:
     info = topic_model.get_topic_info()
     rows = []
     for _, row in info.iterrows():
@@ -509,7 +521,8 @@ def save_topic_summary(topic_model, corpus_df: pd.DataFrame,
             "rep_titles": rep,
         })
     df_sum = pd.DataFrame(rows)
-    path = data_dir / "topic_summary.csv"
+    fname = f"topic_summary_{corpus_suffix}.csv" if corpus_suffix else "topic_summary.csv"
+    path = data_dir / fname
     df_sum.to_csv(path, index=False)
     print(f"[save] Summary     → {path}")
     return df_sum
@@ -520,6 +533,86 @@ def save_model(topic_model, models_dir: Path):
     topic_model.save(path, serialization="safetensors",
                      save_ctfidf=True, save_embedding_model=False)
     print(f"[save] Model       → {path}/")
+
+
+def run_cohesion_sweep(topic_model, embeddings: np.ndarray, data_dir: Path,
+                       min_sizes=(30, 50, 75, 100, 125, 150),
+                       corpus_suffix: str = "") -> pd.DataFrame:
+    """
+    Sweep HDBSCAN min_cluster_size using BERTopic's already-fitted UMAP projection
+    (topic_model.umap_model.embedding_), so the low-dimensional space is identical
+    to the one used in the actual topic model run.
+
+    Cohesion is computed in the full embedding space (cosine similarity of each
+    document to its assigned topic centroid), weighted by topic size.
+
+    Saves data_dir/cohesion_sweep.csv and prints the table.
+    """
+    from hdbscan import HDBSCAN
+    from sklearn.preprocessing import normalize
+
+    print("\n[cohesion] Running cohesion sweep on BERTopic's fitted UMAP projection …")
+
+    # Extract the already-fitted UMAP embedding — identical to what BERTopic used
+    umap_reduced = topic_model.umap_model.embedding_
+    print(f"  UMAP projection shape: {umap_reduced.shape}")
+
+    # Normalise full embeddings once for cosine similarity
+    emb_norm = normalize(embeddings, norm="l2")
+
+    rows = []
+    for mts in sorted(min_sizes):
+        clusterer = HDBSCAN(
+            min_cluster_size=mts,
+            metric="euclidean",
+            cluster_selection_method="eom",
+            prediction_data=True,
+        )
+        labels = clusterer.fit_predict(umap_reduced)
+
+        unique_topics = sorted(t for t in np.unique(labels) if t >= 0)
+        n_topics    = len(unique_topics)
+        n_outliers  = int((labels == -1).sum())
+        outlier_rate = n_outliers / len(labels)
+
+        # Weighted mean & median cosine cohesion in full embedding space
+        coh_rows = []
+        for tid in unique_topics:
+            mask   = labels == tid
+            t_embs = emb_norm[mask]
+            centroid = t_embs.mean(axis=0, keepdims=True)
+            centroid = centroid / (np.linalg.norm(centroid) + 1e-10)
+            sims = (t_embs * centroid).sum(axis=1)
+            coh_rows.append({"n": int(mask.sum()),
+                              "mean_coh": float(sims.mean()),
+                              "med_coh":  float(np.median(sims))})
+
+        if coh_rows:
+            cdf   = pd.DataFrame(coh_rows)
+            total = cdf["n"].sum()
+            wmean = float((cdf["mean_coh"] * cdf["n"]).sum() / total)
+            wmed  = float((cdf["med_coh"]  * cdf["n"]).sum() / total)
+        else:
+            wmean = wmed = float("nan")
+
+        rows.append({
+            "min_topic_size":  mts,
+            "n_topics":        n_topics,
+            "n_outliers":      n_outliers,
+            "outlier_rate":    round(outlier_rate, 4),
+            "mean_cohesion":   round(wmean, 4),
+            "median_cohesion": round(wmed, 4),
+        })
+        print(f"  m={mts:4d}: {n_topics:3d} topics, "
+              f"outlier_rate={outlier_rate:.1%}, mean_cohesion={wmean:.4f}")
+
+    df = pd.DataFrame(rows)
+    fname = f"cohesion_sweep_{corpus_suffix}.csv" if corpus_suffix else "cohesion_sweep.csv"
+    out = data_dir / fname
+    df.to_csv(out, index=False)
+    print(f"[cohesion] Saved → {out}")
+    print(df.to_string(index=False))
+    return df
 
 
 # ── Step 4: Figures ───────────────────────────────────────────────────────────
@@ -586,7 +679,10 @@ def fig_topics_by_publication(topic_model, corpus_df: pd.DataFrame,
         "Sydney Morning Herald": "SMH",
         "Age, The": "The Age", "The Age": "The Age",
         "Canberra Times": "Canberra Times",
-        "Guardian": "Guardian",
+        "The Australian": "The Australian",
+        "Guardian (AU)": "Guardian (AU)",   # edition-tagged v2 — check before bare "Guardian"
+        "Guardian (UK)": "Guardian (UK)",
+        "Guardian Australia": "Guardian (AU)",
     }
 
     def norm_pub(p):
@@ -595,13 +691,14 @@ def fig_topics_by_publication(topic_model, corpus_df: pd.DataFrame,
             if k in p:
                 return v
         if "Guardian" in p:
-            return "Guardian"
+            return "Guardian (UK)"   # bare "The Guardian" falls back to UK (original corpus)
         return None
 
     corp["pub"] = corp["publication"].apply(norm_pub)
     corp = corp[corp["pub"].notna()]
-    pubs_present = [p for p in ["Guardian", "The Age", "SMH", "Canberra Times"]
-                    if p in corp["pub"].unique()]
+    all_pubs = ["Guardian (UK)", "Guardian (AU)", "The Age", "SMH",
+                "Canberra Times", "The Australian"]
+    pubs_present = [p for p in all_pubs if p in corp["pub"].unique()]
 
     mat = pd.crosstab(corp["pub"], corp["topic_id"])
     mat = mat[[t for t in top_topics if t in mat.columns]]
@@ -653,6 +750,125 @@ def fig_topics_by_era(topic_model, corpus_df: pd.DataFrame,
     fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight")
     plt.close()
     print(f"  → {stem}.pdf")
+
+
+# ── Step 4b: DTM — topic trajectories with milestone markers ──────────────────
+
+# Key events in Australian climate policy and Guardian editorial history.
+GUARDIAN_MILESTONES = {
+    2008: "Garnaut\nreport",
+    2011: "Clean Energy\nAct (carbon price)",
+    2013: "Guardian\nAustralia launch",
+    2014: "Carbon tax\nrepeal",
+    2015: "Paris Agreement /\nTurnbull PM",
+    2019: "Guardian\nclimate pledge",
+    2020: "Black Summer\nbushfires",
+    2021: "IPCC AR6\nWG1",
+    2022: "Albanese\nelected",
+}
+
+AUSTRALIAN_MILESTONES = {
+    1997: "Kyoto\nProtocol",
+    2007: "Rudd elected /\nKyoto ratified",
+    2009: "CPRS\ndefeated",
+    2011: "Carbon\nprice",
+    2013: "Abbott\nelected",
+    2014: "Carbon tax\nrepeal",
+    2015: "Paris Agreement /\nTurnbull PM",
+    2019: "Morrison\nre-elected",
+    2021: "IPCC AR6\nWG1",
+    2022: "Albanese\nelected",
+}
+
+
+def fig_topics_over_time_milestones(topic_model, corpus_df: pd.DataFrame,
+                                    figures_dir: Path, corpus_name: str,
+                                    top_n: int = 8, nr_bins: int = 40):
+    """
+    Dynamic topic model figure using BERTopic's topics_over_time() API,
+    with vertical milestone markers for major policy / editorial events.
+
+    BERTopic re-derives c-TF-IDF keywords per time bin, giving the
+    'evolution_tuning' smoothing effect.  The figure shows topic share
+    (% of articles per time bin) rather than raw counts to correct for
+    uneven era coverage.
+    """
+    print("[fig] Topics over time — BERTopic DTM with milestones …")
+
+    corp = corpus_df[corpus_df["topic_id"] != -1].copy()
+    corp["date"] = pd.to_datetime(corp["date"], errors="coerce")
+    corp = corp[corp["date"].notna()]
+    if corp.empty:
+        print("  [skip] No dated articles for DTM figure.")
+        return None
+
+    docs       = corp["body_text"].tolist()
+    topics_lst = corp["topic_id"].tolist()
+    timestamps = corp["date"].tolist()
+
+    tot = topic_model.topics_over_time(
+        docs, timestamps, topics=topics_lst,
+        global_tuning=True, evolution_tuning=True, nr_bins=nr_bins,
+    )
+
+    top_topics = corp["topic_id"].value_counts().head(top_n).index.tolist()
+    info = topic_model.get_topic_info().set_index("Topic")
+    labels = {t: (info.loc[t, "Name"] if t in info.index else f"Topic {t}")
+              for t in top_topics}
+
+    # Compute per-bin totals for normalisation
+    bin_totals = tot.groupby("Timestamp")["Frequency"].transform("sum")
+    tot = tot.copy()
+    tot["pct"] = tot["Frequency"] / bin_totals * 100
+
+    fig, ax = plt.subplots(figsize=(13, 5))
+    cmap = plt.cm.get_cmap("tab10", top_n)
+
+    for i, tid in enumerate(top_topics):
+        sub = tot[tot["Topic"] == tid].sort_values("Timestamp")
+        if sub.empty:
+            continue
+        ts = pd.to_datetime(sub["Timestamp"])
+        ax.plot(ts, sub["pct"], label=labels.get(tid, f"Topic {tid}"),
+                color=cmap(i), linewidth=1.6)
+
+    # Milestone annotations — choose set by corpus name
+    milestones = (GUARDIAN_MILESTONES if "guardian" in corpus_name.lower()
+                  else AUSTRALIAN_MILESTONES)
+
+    date_min = corp["date"].min()
+    date_max = corp["date"].max()
+    ax.autoscale()
+    ymax = ax.get_ylim()[1]
+
+    for year, label in milestones.items():
+        dt = pd.Timestamp(f"{year}-06-01")   # mid-year for visual balance
+        if date_min <= dt <= date_max:
+            ax.axvline(dt, color="#999", linewidth=0.6, linestyle="--", alpha=0.75)
+            ax.text(dt, ymax * 0.98, label,
+                    rotation=90, va="top", ha="right",
+                    fontsize=5.5, color="#555",
+                    bbox=dict(boxstyle="square,pad=0", fc="white", ec="none", alpha=0.6))
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("% of articles in time bin")
+    ax.set_title(f"Topic trajectories with policy milestones — {corpus_name}")
+    ax.legend(frameon=False, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=7.5)
+    fig.tight_layout()
+
+    stem = figures_dir / "fig3d_topics_over_time_milestones"
+    fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight")
+    fig.savefig(stem.with_suffix(".png"), bbox_inches="tight", dpi=150)
+    plt.close()
+    print(f"  → {stem}.pdf/.png")
+
+    # Save the raw DTM table for downstream analysis
+    _tot_suffix = {"guardian": "guardian", "australian": "aus"}.get(corpus_name, corpus_name)
+    tot_path = DATA_DIR / corpus_name / f"topics_over_time_{_tot_suffix}.csv"
+    tot.to_csv(tot_path, index=False)
+    print(f"  → {tot_path}")
+
+    return tot
 
 
 # ── Step 5: Transform-only — project held-out docs into an existing model ──────
@@ -842,7 +1058,9 @@ def align_topics(summary_g: pd.DataFrame, summary_au: pd.DataFrame) -> pd.DataFr
         })
 
     df_align = pd.DataFrame(rows).sort_values("jaccard_similarity", ascending=False)
-    path = DATA_DIR / "topic_alignment.csv"
+    _combined_dir = DATA_DIR / "combined"
+    _combined_dir.mkdir(exist_ok=True)
+    path = _combined_dir / "topic_alignment.csv"
     df_align.to_csv(path, index=False)
     print(f"[align] Alignment table → {path}")
     strong = (df_align["match_strength"] == "strong").sum()
@@ -861,7 +1079,9 @@ def run_corpus(catalogue: pd.DataFrame, corpus_name: str,
                batch_size: int = 256,
                outlier_strategy: str = "embeddings",
                outlier_threshold: float = 0.5,
-               noise_sample_size: int = 100) -> pd.DataFrame:
+               noise_sample_size: int = 100,
+               cohesion_sweep: bool = False,
+               sweep_sizes: tuple = (30, 50, 75, 100, 125, 150)) -> pd.DataFrame:
     """Fit BERTopic on one corpus partition and save all outputs."""
     label = corpus_name
     if exclude_letters: label += "-no-letters"
@@ -882,10 +1102,18 @@ def run_corpus(catalogue: pd.DataFrame, corpus_name: str,
     if not docs:
         raise ValueError(f"No documents loaded for corpus '{corpus_name}'.")
 
+    # corpus_label for embeddings cache: strip "-no-letters"/"-no-aunews" suffixes
+    # so the same embeddings are reused when re-running with different filters.
+    _cache_label = corpus_name  # e.g. "guardian" or "australian"
+
+    # corpus_suffix for topic_summary filename
+    _summary_suffix = {"guardian": "guardian", "australian": "aus"}.get(corpus_name, corpus_name)
+
     # ── Stage 2: fit BERTopic (returns raw topics with -1 noise intact) ───────
     topic_model, topics, probs, embeddings = fit_bertopic(
         docs, min_topic_size=min_topic_size, nr_topics=nr_topics, device=device,
         embedding_model_path=embedding_model_path, batch_size=batch_size,
+        corpus_label=_cache_label,
     )
 
     # ── Stage 2b: reduce outliers with configurable threshold ─────────────────
@@ -898,17 +1126,20 @@ def run_corpus(catalogue: pd.DataFrame, corpus_name: str,
     if noise_sample_size > 0:
         sample_noise_cluster(corpus_df, topics,
                              n_sample=noise_sample_size,
-                             data_dir=data_dir)
+                             data_dir=data_dir,
+                             corpus_suffix=_summary_suffix)
 
     # ── Stage 3: save ─────────────────────────────────────────────────────────
-    corpus_df = save_topic_assignments(corpus_df, topics, probs, data_dir)
-    summary = save_topic_summary(topic_model, corpus_df, data_dir)
+    corpus_df = save_topic_assignments(corpus_df, topics, probs, data_dir,
+                                       corpus_suffix=_summary_suffix)
+    summary = save_topic_summary(topic_model, corpus_df, data_dir, corpus_suffix=_summary_suffix)
     save_model(topic_model, models_dir)
 
-    # ── Stage 4: figures ──────────────────────────────────────────────────────
-    fig_topics_over_time(topic_model, corpus_df, figures_dir, corpus_name)
-    fig_topics_by_publication(topic_model, corpus_df, figures_dir, corpus_name)
-    fig_topics_by_era(topic_model, corpus_df, figures_dir, corpus_name)
+    # ── Stage 4: cohesion sweep (optional) ────────────────────────────────────
+    if cohesion_sweep:
+        run_cohesion_sweep(topic_model, embeddings, data_dir,
+                           min_sizes=sweep_sizes,
+                           corpus_suffix=_summary_suffix)
 
     return summary, topic_model
 
@@ -924,11 +1155,52 @@ def main(corpus: str = "both", min_topic_size: int = 50,
          source_model: str = "combined-no-letters-no-aunews",
          outlier_strategy: str = "embeddings",
          outlier_threshold: float = 0.5,
-         noise_sample_size: int = 100):
+         noise_sample_size: int = 100,
+         cohesion_sweep: bool = False,
+         sweep_sizes: tuple = (30, 50, 75, 100, 125, 150)):
 
-    cat_path = SCORED_CSV if SCORED_CSV.exists() else CATALOGUE_CSV
-    print(f"[load] Catalogue: {cat_path}")
-    catalogue = pd.read_csv(cat_path, low_memory=False)
+    # guardian_relevant.csv — output of guardian_build_scored.py (v2, edition-tagged)
+    # Contains only relevance-filtered articles with body text inline.
+    guardian_relevant = DATA_DIR / "guardian" / "guardian_relevant.csv"
+
+    # Guardian-only: skip the Australian catalogue entirely.
+    if corpus == "guardian":
+        if not guardian_relevant.exists():
+            raise FileNotFoundError(
+                f"Guardian catalogue not found at {guardian_relevant}\n"
+                f"  Run: python guardian_build_scored.py  (from repo/)"
+            )
+        print(f"[load] Guardian catalogue (only): {guardian_relevant}")
+        catalogue = pd.read_csv(guardian_relevant, low_memory=False)
+        print(f"  {len(catalogue):,} articles loaded")
+        if "edition" in catalogue.columns:
+            print(f"  Edition breakdown:\n"
+                  f"{catalogue['edition'].value_counts().to_string()}")
+    else:
+        # Australian or combined: load the Australian catalogue first.
+        if SCORED_CSV.exists():
+            cat_path = SCORED_CSV
+        elif CATALOGUE_CSV.exists():
+            cat_path = CATALOGUE_CSV
+        else:
+            raise FileNotFoundError(
+                f"No Australian catalogue found. Expected one of:\n"
+                f"  {SCORED_CSV}\n  {CATALOGUE_CSV}"
+            )
+        print(f"[load] Catalogue: {cat_path}")
+        catalogue = pd.read_csv(cat_path, low_memory=False)
+
+        # Supplement with Guardian catalogue for modes that include Guardian articles.
+        if corpus in ("both", "combined"):
+            if guardian_relevant.exists():
+                g_cat = pd.read_csv(guardian_relevant, low_memory=False)
+                catalogue = pd.concat([catalogue, g_cat], ignore_index=True)
+                print(f"[load] Guardian catalogue appended: {len(g_cat):,} articles "
+                      f"→ combined total {len(catalogue):,}")
+            else:
+                print(f"[warn] Guardian catalogue not found at {guardian_relevant}")
+                print(f"  Run: python guardian_build_scored.py  (from repo/)")
+
     DATA_DIR.mkdir(exist_ok=True)
     FIGURES_DIR.mkdir(exist_ok=True)
     MODELS_DIR.mkdir(exist_ok=True)
@@ -996,7 +1268,9 @@ def main(corpus: str = "both", min_topic_size: int = 50,
                                   batch_size=batch_size,
                                   outlier_strategy=outlier_strategy,
                                   outlier_threshold=outlier_threshold,
-                                  noise_sample_size=noise_sample_size)
+                                  noise_sample_size=noise_sample_size,
+                                  cohesion_sweep=cohesion_sweep,
+                                  sweep_sizes=sweep_sizes)
 
     if corpus in ("australian", "both"):
         summary_au, _ = run_corpus(catalogue, "australian",
@@ -1006,7 +1280,9 @@ def main(corpus: str = "both", min_topic_size: int = 50,
                                    batch_size=batch_size,
                                    outlier_strategy=outlier_strategy,
                                    outlier_threshold=outlier_threshold,
-                                   noise_sample_size=noise_sample_size)
+                                   noise_sample_size=noise_sample_size,
+                                   cohesion_sweep=cohesion_sweep,
+                                   sweep_sizes=sweep_sizes)
 
     if corpus == "both":
         align_topics(summary_g, summary_au)
@@ -1104,6 +1380,20 @@ if __name__ == "__main__":
             "Default: 100"
         ),
     )
+    parser.add_argument(
+        "--cohesion-sweep", action="store_true",
+        help=(
+            "After fitting, sweep HDBSCAN min_cluster_size over --sweep-sizes "
+            "using BERTopic's already-fitted UMAP projection. Saves "
+            "data/{corpus}/cohesion_sweep.csv. Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--sweep-sizes", nargs="+", type=int,
+        default=[30, 50, 75, 100, 125, 150],
+        metavar="N",
+        help="min_cluster_size values for --cohesion-sweep (default: 30 50 75 100 125 150)",
+    )
     args = parser.parse_args()
 
     main(
@@ -1120,4 +1410,6 @@ if __name__ == "__main__":
         outlier_strategy=args.outlier_strategy,
         outlier_threshold=args.outlier_threshold,
         noise_sample_size=args.noise_sample_size,
+        cohesion_sweep=args.cohesion_sweep,
+        sweep_sizes=tuple(args.sweep_sizes),
     )

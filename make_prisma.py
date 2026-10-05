@@ -35,7 +35,7 @@ def get_prisma_stats() -> dict:
         pub_editorial       — pd.Series: editorial-only count by publication (desc)
         year_min, year_max  — temporal range of included corpus
     """
-    scored = pd.read_csv(DATA_DIR / "articles_scored.csv")
+    scored = pd.read_csv(DATA_DIR / "articles_scored_australian.csv")
 
     # Restrict to Australian NewsBank publications only; exclude letters throughout
     au = scored[scored["publication"] != "The Guardian"].copy()
@@ -111,21 +111,21 @@ C_LGREEN = '#d9f0d3'
 C_LRED   = '#fddbc7'
 C_LGREY  = '#eeeeee'
 
-# ── Figure setup ───────────────────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(9, 7.5))
+# ── Figure setup (normalised to match Guardian PRISMA) ─────────────────────────
+fig, ax = plt.subplots(figsize=(8.5, 7.0))
 ax.set_xlim(0, 11)
-ax.set_ylim(4.8, 12.2)
+ax.set_ylim(4.6, 12.2)
 ax.axis('off')
 
 # ── Y positions (top to bottom) ────────────────────────────────────────────────
-Y_IDENT  = 11.3   # Identification box centre
-Y_DEDUP  =  9.9   # Deduplication box centre
-Y_SCREEN =  8.6   # Screening box centre
-Y_FINAL  =  7.3   # Final corpus box centre
-Y_HBAR   =  6.3   # Horizontal connector
-Y_PUB    =  5.6   # Per-publication boxes centre
+Y_IDENT  = 11.4   # Identification box centre
+Y_DEDUP  = 10.1   # Deduplication box centre
+Y_SCREEN =  8.8   # Screening box centre
+Y_FINAL  =  7.5   # Final corpus box centre
+Y_HBAR   =  6.5   # Horizontal connector
+Y_PUB    =  5.7   # Per-publication boxes centre
 
-BH = 0.72   # standard box height
+BH = 0.75   # standard box height
 BW = 5.5    # main box width
 
 
@@ -153,7 +153,7 @@ def side_excl(ax, x, y, w, h, text):
                           facecolor=C_LRED, edgecolor=C_RED,
                           linewidth=1.0, zorder=2)
     ax.add_patch(rect)
-    ax.text(x, y, text, ha='center', va='center', fontsize=8.0,
+    ax.text(x, y, text, ha='center', va='center', fontsize=10.0,
             color='black', zorder=3, multialignment='center',
             transform=ax.transData)
 
@@ -164,26 +164,26 @@ for label, yc, fc in [
     ('Deduplication',  Y_DEDUP,  '#eeeeee'),
     ('Screening',      Y_SCREEN, '#fff3cd'),
 ]:
-    rect = FancyBboxPatch((0.05, yc - 0.62), 1.28, 1.24,
+    rect = FancyBboxPatch((0.05, yc - 0.45), 1.6, 0.90,
                           boxstyle="round,pad=0.1",
                           facecolor=fc, edgecolor='#aaaaaa',
                           linewidth=0.8, zorder=1)
     ax.add_patch(rect)
-    ax.text(0.69, yc, label, ha='center', va='center', fontsize=7.5,
+    ax.text(0.69, yc, label, ha='center', va='center', fontsize=9.5,
             fontweight='bold', color='#333333', multialignment='center',
             transform=ax.transData)
 
 # Included phase label — spans final corpus box down to per-pub boxes
 incl_top    = Y_FINAL + BH / 2
 incl_bottom = Y_PUB   - 0.31          # 0.31 = half of pub box height (0.62)
-rect = FancyBboxPatch((0.05, incl_bottom - 0.1), 1.28,
+rect = FancyBboxPatch((0.05, incl_bottom - 0.1), 1.6,
                       incl_top - incl_bottom + 0.2,
                       boxstyle="round,pad=0.1",
                       facecolor='#d9f0d3', edgecolor='#aaaaaa',
                       linewidth=0.8, zorder=1)
 ax.add_patch(rect)
 ax.text(0.69, (incl_top + incl_bottom) / 2, 'Included',
-        ha='center', va='center', fontsize=7.5,
+        ha='center', va='center', fontsize=9.5,
         fontweight='bold', color='#333333', multialignment='center',
         transform=ax.transData)
 
@@ -194,7 +194,7 @@ box(ax, 5.5, Y_IDENT, BW, 1.0,
     f'NewsBank Australia — PDF export\n'
     f'The Australian, The Age, Sydney Morning Herald, Canberra Times\n'
     f'n = {n_newsbank_raw:,} records identified (post cross-folder deduplication)',
-    facecolor=C_LBLUE, edgecolor=C_BLUE, fontsize=9)
+    facecolor=C_LBLUE, edgecolor=C_BLUE, fontsize=8.5)
 
 arrow(ax, 5.5, Y_IDENT - 0.5, 5.5, Y_DEDUP + BH / 2 + 0.06)
 
@@ -204,7 +204,7 @@ arrow(ax, 5.5, Y_IDENT - 0.5, 5.5, Y_DEDUP + BH / 2 + 0.06)
 box(ax, 5.5, Y_DEDUP, BW, BH,
     'Cross-folder duplicates removed (title × date × publication)\n'
     f'Pre-screening corpus: N = {n_newsbank_raw:,} articles',
-    facecolor=C_LGREY, edgecolor='#555555', fontsize=8.5)
+    facecolor=C_LGREY, edgecolor='#555555', fontsize=10)
 
 arrow(ax, 5.5, Y_DEDUP - BH / 2, 5.5, Y_SCREEN + BH / 2 + 0.06)
 
@@ -214,7 +214,7 @@ arrow(ax, 5.5, Y_DEDUP - BH / 2, 5.5, Y_SCREEN + BH / 2 + 0.06)
 box(ax, 5.5, Y_SCREEN, BW, BH,
     'Relevance criterion applied\n'
     '(keyword frequency in title and body text)',
-    facecolor='#fff9e6', edgecolor='#e0a000', fontsize=8.5)
+    facecolor='#fff9e6', edgecolor='#e0a000', fontsize=10)
 
 side_excl(ax, 9.6, Y_SCREEN, 2.2, 0.65,
           f'Not relevant\nn = {n_excl_relevance:,}')
@@ -229,7 +229,7 @@ arrow(ax, 5.5, Y_SCREEN - BH / 2, 5.5, Y_FINAL + BH / 2 + 0.06)
 box(ax, 5.5, Y_FINAL, BW, BH,
     f'Final included corpus: N = {n_editorial:,} \neditorial/opinion articles'
     f'  ({year_min}–{year_max})',
-    facecolor=C_LGREEN, edgecolor=C_GREEN, fontsize=9, bold=True)
+    facecolor=C_LGREEN, edgecolor=C_GREEN, fontsize=10, bold=True)
 
 arrow(ax, 5.5, Y_FINAL - BH / 2, 5.5, Y_HBAR + 0.06)
 
@@ -256,7 +256,7 @@ for xc, pub, n in zip(xs, pubs, counts):
     label = PUB_SHORT.get(pub, pub)
     box(ax, xc, Y_PUB, box_w, 0.62,
         f'{label}\nn = {n:,}',
-        facecolor=C_LGREEN, edgecolor=C_GREEN, fontsize=8.0)
+        facecolor=C_LGREEN, edgecolor=C_GREEN, fontsize=12.0)
 
 fig.tight_layout(pad=0.5)
 out_path = FIGURES_DIR / "fig1_prisma.pdf"

@@ -43,7 +43,7 @@ from scipy.stats import chi2_contingency
 from config import DATA_DIR, FIGURES_DIR
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-DATA_PATH = DATA_DIR / "australian-no-letters" / "topic_assignments.csv"
+DATA_PATH = DATA_DIR / "australian-no-letters" / "topic_assignments_aus.csv"
 OUT_DIR   = DATA_DIR / "australian-no-letters"
 FIG_DIR   = FIGURES_DIR / "cluster_analysis"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -52,24 +52,21 @@ FIG_DIR.mkdir(parents=True, exist_ok=True)
 OUTLETS = ["The Australian", "The Age", "Sydney Morning Herald", "Canberra Times"]
 
 # Seaborn "colorblind" palette (Wong 2011)
-OUTLET_COLORS = {
-    "The Australian":      "#0173b2",
-    "The Age":             "#de8f05",
-    "Sydney Morning Herald": "#029e73",
-    "Canberra Times":      "#d55e00",
-}
+from config import OUTLET_COLORS as _OC
+OUTLET_COLORS = {k: _OC[k] for k in ["The Australian","The Age","Sydney Morning Herald","Canberra Times"]}
 
 NOISE_GROUPS = {"Noise"}
 
-# Preferred display order for rows (matches THEME_ORDER in analyse_clusters.py)
+# Preferred display order for rows
 THEME_ORDER = [
-    "Political leadership & party dynamics",
-    "Carbon pricing & emissions policy",
-    "Climate science & physical impacts",
-    "Energy policy & transition",
-    "Environment & biodiversity",
-    "Media, culture & society",
-    "International climate diplomacy",
+    "Australian Politics",
+    "Carbon Pricing & Domestic Climate Policy",
+    "Regional & International Politics",
+    "Climate Science",
+    "Physical & Ecological Impacts",
+    "Energy Transition & Technology",
+    "International Climate Policy",
+    "Culture Media & Society",
 ]
 
 # ── Font ──────────────────────────────────────────────────────────────────────
@@ -86,12 +83,12 @@ plt.rcParams.update({
 # ── Load data ─────────────────────────────────────────────────────────────────
 df = pd.read_csv(DATA_PATH)
 df = df[df["publication"].isin(OUTLETS)].copy()
-df = df[df["theme"].notna() & ~df["theme"].isin(NOISE_GROUPS)].copy()
+df = df[df["group"].notna() & ~df["group"].isin(NOISE_GROUPS)].copy()
 
 total = len(df)
 print(f"Articles (noise excluded): {total:,}")
 print(f"Outlets:\n{df['publication'].value_counts().to_string()}")
-print(f"\nGroups ({df['theme'].nunique()}): {sorted(df['theme'].unique())}\n")
+print(f"\nGroups ({df['group'].nunique()}): {sorted(df['group'].unique())}\n")
 
 # ── Corpus-level expected proportions ─────────────────────────────────────────
 p_exp = df["publication"].value_counts() / total
@@ -100,7 +97,7 @@ print("Expected proportions (corpus share):")
 print(p_exp.round(4).to_string())
 
 # ── Contingency table ─────────────────────────────────────────────────────────
-ct = pd.crosstab(df["theme"], df["publication"])[OUTLETS]
+ct = pd.crosstab(df["group"], df["publication"])[OUTLETS]
 n_i = ct.sum(axis=1)
 
 # ── Representation ratios ─────────────────────────────────────────────────────
@@ -289,3 +286,55 @@ fig2.savefig(str(FIG_DIR / "outlet_topic_attention_dotplot.png"), bbox_inches="t
 plt.close()
 print(f"Dot plot  → outlet_topic_attention_dotplot.pdf")
 print(f"Font used: {FONT}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Figure 3: Publication share matrix (column-normalised)
+# Each cell = % of that outlet's articles in the group
+# ═══════════════════════════════════════════════════════════════════════════════
+df_full = pd.read_csv(DATA_PATH)
+df_full = df_full[df_full["publication"].isin(OUTLETS)].copy()
+df_full = df_full[df_full["group"].notna() & ~df_full["group"].isin(NOISE_GROUPS)].copy()
+
+pub_totals = df_full["publication"].value_counts().reindex(OUTLETS, fill_value=0)
+
+rows = []
+for grp in row_order:
+    sub = df_full[df_full["group"] == grp]
+    counts = sub["publication"].value_counts().reindex(OUTLETS, fill_value=0)
+    pct = counts / pub_totals.replace(0, np.nan) * 100
+    rows.append({"group": grp, **pct.to_dict()})
+
+matrix = pd.DataFrame(rows).set_index("group")[OUTLETS]
+
+fig3, ax3 = plt.subplots(figsize=(max(7, len(OUTLETS) * 1.8), max(5, len(row_order) * 0.7)))
+vmax_m = np.nanmax(matrix.values)
+im3 = ax3.imshow(matrix.values, cmap="Blues", aspect="auto", vmin=0, vmax=vmax_m)
+
+for i in range(len(row_order)):
+    for j in range(len(OUTLETS)):
+        val = matrix.values[i, j]
+        if np.isnan(val) or val < 0.5:
+            continue
+        text_color = "white" if val > vmax_m * 0.65 else "black"
+        ax3.text(j, i, f"{val:.1f}", ha="center", va="center",
+                 fontsize=8.5, color=text_color)
+
+ax3.set_xticks(range(len(OUTLETS)))
+ax3.set_xticklabels(OUTLETS, rotation=30, ha="right", fontsize=9)
+ax3.set_yticks(range(len(row_order)))
+ax3.set_yticklabels(row_order, fontsize=9)
+ax3.set_title("% of each outlet's articles per thematic group\n(column-normalised)",
+              fontsize=11, pad=10)
+
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+divider = make_axes_locatable(ax3)
+cax3 = divider.append_axes("right", size="3%", pad=0.2)
+fig3.colorbar(im3, cax=cax3, label="% of outlet's articles")
+
+fig3.tight_layout()
+fig3.savefig(str(FIG_DIR / "pub_share_matrix.pdf"), bbox_inches="tight", dpi=300)
+fig3.savefig(str(FIG_DIR / "pub_share_matrix.png"), bbox_inches="tight", dpi=150)
+plt.close()
+matrix.round(1).to_csv(OUT_DIR / "pub_share_matrix.csv")
+print(f"\nPub share matrix → pub_share_matrix.pdf")
+print(matrix.round(1).to_string())
