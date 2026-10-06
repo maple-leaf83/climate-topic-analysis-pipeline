@@ -41,86 +41,13 @@ OUTLET_COLORS = {
 }
 
 # ── Root paths ─────────────────────────────────────────────────────────────────
-ROOT        = Path(__file__).parent          # repo root
-DATA_DIR    = ROOT / "data"                  # output data directory
+ROOT        = Path(__file__).parent.parent   # repo root (scripts/ → repo root)
+DATA_DIR    = ROOT / "data"                  # pipeline data directory
 FIGURES_DIR = ROOT / "figures"               # output figures directory
 MODELS_DIR  = ROOT / "models"                # local model cache (avoids ~/.cache)
 ST_MODEL_DIR = MODELS_DIR / "all-MiniLM-L6-v2"  # sentence transformer cache
 
-# ── Input: NewsBank PDF folders ────────────────────────────────────────────────
-# Set NEWSBANK_ROOT to the directory containing your downloaded PDF folders.
-NEWSBANK_ROOT = ROOT.parent / "Data"   # PDF folders live inside Data/
-
-NEWSBANK_FOLDERS = {
-    # SMH
-    "SMH_HeraldsView":       {"publication": "Sydney Morning Herald", "content_type": "Editorial"},
-    "SMH-PoliticalEditor":   {"publication": "Sydney Morning Herald", "content_type": "Columnist"},
-    "SMH_PeterHartcher":     {"publication": "Sydney Morning Herald", "content_type": "Columnist"},
-    "SMH_RossGittins":       {"publication": "Sydney Morning Herald", "content_type": "Columnist"},
-    "SMH_Sheehan_Farrelly":  {"publication": "Sydney Morning Herald", "content_type": "Columnist"},
-    "SMH_Devine":            {"publication": "Sydney Morning Herald", "content_type": "Columnist"},
-    "SMH_analysis":          {"publication": "Sydney Morning Herald", "content_type": "Analysis"},
-    "SMH_letters":           {"publication": "Sydney Morning Herald", "content_type": "Letters"},
-    "SMH_opinion":           {"publication": "Sydney Morning Herald", "content_type": "Opinion/Op-Ed"},
-    "SMH_NewsReview":        {"publication": "Sydney Morning Herald", "content_type": "Opinion/Op-Ed"},
-    "SMH_1987_1990":         {"publication": "Sydney Morning Herald", "content_type": "Analysis"},
-    "SMH_Editor":            {"publication": "Sydney Morning Herald", "content_type": "Editorial"},
-    # The Age
-    "TheAge_Editor":                 {"publication": "The Age", "content_type": "Editorial"},
-    "TheAge_PolEditor":              {"publication": "The Age", "content_type": "Columnist"},
-    "TheAge_Davdison_Grattan_Ross":  {"publication": "The Age", "content_type": "Columnist"},
-    "TheAge_Analysis":               {"publication": "The Age", "content_type": "Analysis"},
-    "TheAge_Letter_Insight":         {"publication": "The Age", "content_type": "Letters"},
-    # Canberra Times
-    "CT_Editorial":          {"publication": "Canberra Times", "content_type": "Editorial"},
-    "CT_LTEditor":           {"publication": "Canberra Times", "content_type": "Letters"},
-    "CT_Letters":            {"publication": "Canberra Times", "content_type": "Letters"},
-    "CT_Letters_97-2007":    {"publication": "Canberra Times", "content_type": "Letters"},
-    "CT_Opinion":            {"publication": "Canberra Times", "content_type": None},   # auto-classified
-    "CT_opinion_analysis":   {"publication": "Canberra Times", "content_type": None},   # auto-classified
-    # The Australian
-    "TheAustralian_Analysis":        {"publication": "The Australian", "content_type": "Analysis"},
-    "TheAustralian_Inquirer":        {"publication": "The Australian", "content_type": None},  # auto-classified
-    "Australian_Inquirer_2122":      {"publication": "The Australian", "content_type": None},  # auto-classified
-    "TheAustralian_SpecificEditors": {"publication": "The Australian", "content_type": "Columnist"},
-    "TheAustralian_Letters":         {"publication": "The Australian", "content_type": "Letters"},
-    "Australian_Editor": {"publication": "The Australian", "content_type": "Editorial"},
-}
-
-# ── Input: Guardian API ────────────────────────────────────────────────────────
-GUARDIAN_API_KEY  = "key-from-api"   # https://open-platform.theguardian.com/
-GUARDIAN_QUERIES  = ["climate change", "global warming", "climate emergency"]
-GUARDIAN_FROM     = "1999-01-01"
-GUARDIAN_TO       = "2026-04-30"
-
-# Sections and the edition label assigned to each.
-# commentisfree and environment are produced by the UK newsroom.
-# australia-news is produced by Guardian Australia.
-GUARDIAN_SECTION_EDITIONS = {
-    "commentisfree": "UK",
-    "environment":   "UK",
-    "australia-news": "AU",
-}
-GUARDIAN_SECTIONS = list(GUARDIAN_SECTION_EDITIONS.keys())  # kept for back-compat
-
-# Tone tags (Guardian taxonomy) — used to exclude straight news reporting.
-# commentisfree articles carry tone/comment by default; environment and
-# australia-news carry a mix of tone/news, tone/analysis, tone/features.
-GUARDIAN_EXCLUDE_TONES = {"tone/news"}
-GUARDIAN_INCLUDE_TONES = {
-    "tone/comment",
-    "tone/analysis",
-    "tone/features",
-    "tone/editorials",
-    "tone/letters",       # exclude if you don't want letters — remove this line
-}
-
-# ── Input files (live in parent folder, alongside the PDF folders) ─────────────
-# guardian_articles.csv and article_catalogue.csv are kept one level above the
-# repo because they are too large / licensing-sensitive to commit to git.
-PARENT_DIR      = ROOT.parent
-GUARDIAN_CSV    = PARENT_DIR / "guardian_articles.csv"       # original pull (back-compat)
-GUARDIAN_V2_CSV = PARENT_DIR / "guardian_articles_v2.csv"   # edition-tagged, tone-filtered
+# ── Input corpora (CSV files; article body text not included — see README) ──────
 CATALOGUE_CSV         = DATA_DIR / "articles_scored_australian.csv"
 GUARDIAN_CATALOGUE_CSV = DATA_DIR / "guardian" / "guardian_articles_scored.csv"
 
@@ -170,7 +97,7 @@ CORE_CLIMATE_PHRASES = [
 #   (c) Any CORE_CLIMATE_PHRASE appears >= 1 time AND
 #       climate_mentions >= CLIMATE_MENTIONS_THRESHOLD
 CC_CORE_THRESHOLD          = 3   # formerly CC_GW_THRESHOLD (value unchanged)
-CLIMATE_MENTIONS_THRESHOLD = 3   # lowered from 4
+CLIMATE_MENTIONS_THRESHOLD = 3
 
 # ── CT columnist names (for auto-classification) ───────────────────────────────
 CT_COLUMNISTS = {

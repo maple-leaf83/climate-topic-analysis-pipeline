@@ -56,7 +56,7 @@ PARENT    = REPO.parent
 
 GUARDIAN_CSV  = Path(os.environ.get("GUARDIAN_CSV",  PARENT / "guardian_articles.csv"))
 NB_BODIES     = Path(os.environ.get("NB_BODIES",     DATA_OUT / "newsbank_bodies.pkl.gz"))
-OUT_CSV       = DATA_OUT / "articles_scored.csv"
+OUT_CSV       = DATA_OUT / "articles_scored_australian.csv"
 
 DATA_OUT.mkdir(exist_ok=True)
 

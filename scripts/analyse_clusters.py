@@ -33,7 +33,7 @@ FIGURES_DIR = REPO / "figures" / "cluster_analysis"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 ASSIGNMENTS_CSV = DATA_DIR / "topic_assignments.csv"
-SUMMARY_CSV     = DATA_DIR / "topic_summary.csv"
+SUMMARY_CSV     = DATA_DIR / "topic_summary_aus.csv"
 LETTERS_CSV     = REPO / "data" / "letters" / "topic_assignments.csv"
 
 # ── Style ──────────────────────────────────────────────────────────────────────
@@ -547,7 +547,7 @@ def plot_t00_keyword_cooccurrence(df: pd.DataFrame, summary: pd.DataFrame):
     print("  Loading article bodies for Political Leadership keyword co-occurrence…")
 
     # ── Load body text from articles_scored.csv ───────────────────────────────
-    SCORED_CSV = REPO / "data" / "articles_scored.csv"
+    SCORED_CSV = REPO / "data" / "articles_scored_australian.csv"
     csv.field_size_limit(10_000_000)
     bodies = pd.read_csv(
         SCORED_CSV,
