@@ -8,8 +8,6 @@ Reproducible code for the topic modelling and analysis pipeline used in:
 
 > Antony, B., Foale, C. & Chand, S. (in prep). *A Climate of Opinion: Computational Analysis of Australian Climate Opinion Journalism, 2001–2025.*
 
-Code repository: https://github.com/maple-leaf83/climate-topic-analysis-pipeline
-
 ---
 
 ## Overview
@@ -177,14 +175,6 @@ python scripts/outlet_attention_comparison.py
 
 Produces comparison figures of outlet-level attention between the AU and Guardian corpora.
 
-**Era-stratified representation**
-
-```bash
-python scripts/era_stratified_representation.py
-```
-
-Runs the outlet × topic-group binomial analysis separately for each government era (Howard, Rudd/Gillard, Abbott/Turnbull, Morrison, Albanese) to test whether structural differences persist across political periods.
-
 ---
 
 ### 6. Cross-corpus comparison and co-occurrence
@@ -218,81 +208,6 @@ python scripts/cohesion_analysis.py
 ```
 
 `cohesion_analysis.py` computes the cosine similarity between each article's embedding and its assigned harmonised group centroid for both corpora, writing `data/australian-no-letters/cohesion_scores_aus.csv` and `data/guardian/cohesion_scores_guardian.csv`.
-
-`analyse_cohesion.py` generates the cohesion boxplot figure (`figures/cohesion/cohesion_clusters.pdf`) comparing within-group embedding tightness across corpora.
-
----
-
-### 9. PRISMA diagrams
-
-```bash
-python scripts/make_prisma.py
-python scripts/make_prisma_guardian.py
-```
-
-Generates PRISMA-style flow diagrams for each corpus's inclusion/exclusion screening.
-
----
-
-## Repository structure
-
-```
-repo/
-├── scripts/
-│   ├── config.py                        # Paths, colour palettes, taxonomy mappings, thresholds
-│   │
-│   ├── score_and_classify.py            # Step 1a: AU relevance scoring
-│   ├── guardian_build_scored.py         # Step 1b: Guardian relevance scoring
-│   │
-│   ├── run_bertopic.py                  # Step 2: BERTopic modelling (AU and Guardian)
-│   ├── build_topic_keywords.py          # Step 3: c-TF-IDF keyword extraction
-│   │
-│   ├── report_topics.py                 # Step 4: topic report and taxonomy harmonisation
-│   ├── analyse_clusters.py              # Per-group publication/era breakdowns
-│   │
-│   ├── outlet_topic_attention.py        # Step 5a: outlet binomial representation analysis
-│   ├── outlet_attention_comparison.py   # Step 5b: cross-corpus outlet comparison
-│   ├── era_stratified_representation.py # Step 5c: era-stratified representation
-│   │
-│   ├── compare_corpora.py               # Step 6: co-occurrence and outlet temporal lines
-│   ├── temporal_comparison.py           # Step 7: era-level and yearly temporal figures
-│   │
-│   ├── cohesion_analysis.py             # Step 8: cosine cohesion scores and figures
-│   │
-│   ├── make_prisma.py                   # Step 9a: PRISMA diagram (AU corpus)
-│   └── make_prisma_guardian.py          # Step 9b: PRISMA diagram (Guardian corpus)
-│
-├── tables/
-│   ├── topic_clusters_au.csv            # Appendix D: AU BERTopic cluster listing
-│   ├── topic_clusters_guardian.csv      # Appendix D: Guardian BERTopic cluster listing
-│   ├── topic_groups_au.csv              # Appendix C: AU thematic group definitions
-│   └── topic_groups_guardian.csv        # Appendix C: Guardian thematic group definitions
-│
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Data outputs
-
-```
-data/
-├── articles_scored_australian.csv           # AU corpus after relevance screening
-├── australian-no-letters/
-│   ├── topic_assignments.csv                # BERTopic assignments (AU)
-│   ├── topic_summary.csv                    # Topic-level c-TF-IDF summary (AU)
-│   ├── australian_topic_groups.csv          # Harmonised group labels (AU)
-│   ├── outlet_binomial_zscores.csv          # Representation z-scores
-│   ├── outlet_representation_ratios.csv     # Representation ratios r
-│   └── cohesion_scores_aus.csv              # Cosine cohesion (AU)
-└── guardian/
-    ├── guardian_articles_scored.csv         # Guardian corpus after relevance screening
-    ├── topic_assignments_guardian.csv       # BERTopic assignments (Guardian)
-    ├── topic_summary_guardian.csv           # Topic-level c-TF-IDF summary (Guardian)
-    ├── guardian_topic_groups.csv            # Harmonised group labels (Guardian)
-    └── cohesion_scores_guardian.csv         # Cosine cohesion (Guardian)
-```
 
 ---
 
