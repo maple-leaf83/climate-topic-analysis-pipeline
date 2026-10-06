@@ -67,7 +67,7 @@ pip install -r requirements.txt
 
 ### Configure paths
 
-Edit `config.py` to set corpus paths and any local embedding model paths if running offline.
+Edit `scripts/config.py` to set any local embedding model paths if running offline.
 
 ---
 
@@ -78,23 +78,23 @@ Edit `config.py` to set corpus paths and any local embedding model paths if runn
 **Australian corpus**
 
 ```bash
-python score_and_classify.py
+python scripts/score_and_classify.py
 ```
 
 Applies the hybrid relevance criterion to raw article CSVs and writes `data/articles_scored_australian.csv`. An article is included if any of the following hold:
 
-| Condition | Rule |
-|---|---|
-| (a) High direct frequency | `cc_count + gw_count ≥ 3` |
-| (b) Title hit | Title contains "climate change" or "global warming" |
-| (c) Broad climate vocabulary | `cc_count + gw_count ≥ 1` AND `climate_mentions ≥ 4` |
+| Condition | Rule                                                 |
+|---|------------------------------------------------------|
+| (a) High direct frequency | `cc_count + gw_count ≥ 3`                            |
+| (b) Title hit | Title contains "climate change" or "global warming"  |
+| (c) Broad climate vocabulary | `cc_count + gw_count ≥ 1` AND `climate_mentions ≥ 3` |
 
 `climate_mentions` counts occurrences of any term in the 47-term `CLIMATE_TERMS` vocabulary defined in `config.py`.
 
 **Guardian corpus**
 
 ```bash
-python guardian_build_scored.py
+python scripts/guardian_build_scored.py
 ```
 
 Applies equivalent relevance screening to the Guardian article CSV and writes `data/guardian/guardian_articles_scored.csv`.
@@ -104,8 +104,8 @@ Applies equivalent relevance screening to the Guardian article CSV and writes `d
 ### 2. BERTopic topic modelling
 
 ```bash
-python run_bertopic.py --corpus australian 
-python run_bertopic.py --corpus guardian
+python scripts/run_bertopic.py --corpus australian 
+python scripts/run_bertopic.py --corpus guardian
 ```
 
 Fits independent BERTopic models for each corpus using `nomic-embed-text-v1` (8,192-token context window), which encodes each article in full without truncation. Outlier articles are reassigned by cosine similarity to the nearest topic embedding.
@@ -137,7 +137,7 @@ Key options:
 ### 3. Topic keywords
 
 ```bash
-python build_topic_keywords.py
+python scripts/build_topic_keywords.py
 ```
 
 Extracts the top-N c-TF-IDF keywords for every BERTopic topic in both corpora and writes them to `topic_keywords.xlsx`. Used during manual taxonomy harmonisation.
@@ -147,7 +147,7 @@ Extracts the top-N c-TF-IDF keywords for every BERTopic topic in both corpora an
 ### 4. Topic reporting and taxonomy harmonisation
 
 ```bash
-python report_topics.py
+python scripts/report_topics.py
 ```
 
 Loads both sets of topic assignments, applies the manually defined 7-category harmonised taxonomy (configured in `config.py` via `HARMONIZED_COLORS` and the group-name mappings), and writes:
@@ -164,7 +164,7 @@ Loads both sets of topic assignments, applies the manually defined 7-category ha
 **Outlet × topic-group binomial analysis**
 
 ```bash
-python outlet_topic_attention.py
+python scripts/outlet_topic_attention.py
 ```
 
 Computes whether each outlet devotes significantly more or less attention to each harmonised topic group than its corpus-level share would predict. Uses binomial z-scores and representation ratios *r*. Outputs to `data/australian-no-letters/` and `figures/`.
@@ -172,7 +172,7 @@ Computes whether each outlet devotes significantly more or less attention to eac
 **Cross-corpus outlet comparison**
 
 ```bash
-python outlet_attention_comparison.py
+python scripts/outlet_attention_comparison.py
 ```
 
 Produces comparison figures of outlet-level attention between the AU and Guardian corpora.
@@ -180,7 +180,7 @@ Produces comparison figures of outlet-level attention between the AU and Guardia
 **Era-stratified representation**
 
 ```bash
-python era_stratified_representation.py
+python scripts/era_stratified_representation.py
 ```
 
 Runs the outlet × topic-group binomial analysis separately for each government era (Howard, Rudd/Gillard, Abbott/Turnbull, Morrison, Albanese) to test whether structural differences persist across political periods.
@@ -190,7 +190,7 @@ Runs the outlet × topic-group binomial analysis separately for each government 
 ### 6. Cross-corpus comparison and co-occurrence
 
 ```bash
-python compare_corpora.py
+python scripts/compare_corpora.py
 ```
 
 Two main analyses:
@@ -204,7 +204,7 @@ Two main analyses:
 ### 7. Temporal analysis
 
 ```bash
-python temporal_comparison.py
+python scripts/temporal_comparison.py
 ```
 
 Produces era-level stacked bar charts and year-by-year topic share lines comparing the AU and Guardian corpora. Outputs to `figures/comparison/`.
@@ -214,8 +214,7 @@ Produces era-level stacked bar charts and year-by-year topic share lines compari
 ### 8. Semantic cohesion analysis
 
 ```bash
-python cohesion_analysis.py
-python analyse_cohesion.py
+python scripts/cohesion_analysis.py
 ```
 
 `cohesion_analysis.py` computes the cosine similarity between each article's embedding and its assigned harmonised group centroid for both corpora, writing `data/australian-no-letters/cohesion_scores_aus.csv` and `data/guardian/cohesion_scores_guardian.csv`.
@@ -227,8 +226,8 @@ python analyse_cohesion.py
 ### 9. PRISMA diagrams
 
 ```bash
-python make_prisma.py
-python make_prisma_guardian.py
+python scripts/make_prisma.py
+python scripts/make_prisma_guardian.py
 ```
 
 Generates PRISMA-style flow diagrams for each corpus's inclusion/exclusion screening.
@@ -239,29 +238,35 @@ Generates PRISMA-style flow diagrams for each corpus's inclusion/exclusion scree
 
 ```
 repo/
-├── config.py                        # Paths, colour palettes, taxonomy mappings, thresholds
+├── scripts/
+│   ├── config.py                        # Paths, colour palettes, taxonomy mappings, thresholds
+│   │
+│   ├── score_and_classify.py            # Step 1a: AU relevance scoring
+│   ├── guardian_build_scored.py         # Step 1b: Guardian relevance scoring
+│   │
+│   ├── run_bertopic.py                  # Step 2: BERTopic modelling (AU and Guardian)
+│   ├── build_topic_keywords.py          # Step 3: c-TF-IDF keyword extraction
+│   │
+│   ├── report_topics.py                 # Step 4: topic report and taxonomy harmonisation
+│   ├── analyse_clusters.py              # Per-group publication/era breakdowns
+│   │
+│   ├── outlet_topic_attention.py        # Step 5a: outlet binomial representation analysis
+│   ├── outlet_attention_comparison.py   # Step 5b: cross-corpus outlet comparison
+│   ├── era_stratified_representation.py # Step 5c: era-stratified representation
+│   │
+│   ├── compare_corpora.py               # Step 6: co-occurrence and outlet temporal lines
+│   ├── temporal_comparison.py           # Step 7: era-level and yearly temporal figures
+│   │
+│   ├── cohesion_analysis.py             # Step 8: cosine cohesion scores and figures
+│   │
+│   ├── make_prisma.py                   # Step 9a: PRISMA diagram (AU corpus)
+│   └── make_prisma_guardian.py          # Step 9b: PRISMA diagram (Guardian corpus)
 │
-├── score_and_classify.py            # Step 1a: AU relevance scoring
-├── guardian_build_scored.py         # Step 1b: Guardian relevance scoring
-│
-├── run_bertopic.py                  # Step 2: BERTopic modelling (AU and Guardian)
-├── build_topic_keywords.py          # Step 3: c-TF-IDF keyword extraction
-│
-├── report_topics.py                 # Step 4: topic report and taxonomy harmonisation
-├── analyse_clusters.py              # Per-group publication/era breakdowns
-│
-├── outlet_topic_attention.py        # Step 5a: outlet binomial representation analysis
-├── outlet_attention_comparison.py   # Step 5b: cross-corpus outlet comparison
-├── era_stratified_representation.py # Step 5c: era-stratified representation
-│
-├── compare_corpora.py               # Step 6: co-occurrence and outlet temporal lines
-├── temporal_comparison.py           # Step 7: era-level and yearly temporal figures
-│
-├── cohesion_analysis.py             # Step 8a: compute cosine cohesion scores
-├── analyse_cohesion.py              # Step 8b: cohesion boxplot figure
-│
-├── make_prisma.py                   # Step 9a: PRISMA diagram (AU corpus)
-├── make_prisma_guardian.py          # Step 9b: PRISMA diagram (Guardian corpus)
+├── tables/
+│   ├── topic_clusters_au.csv            # Appendix D: AU BERTopic cluster listing
+│   ├── topic_clusters_guardian.csv      # Appendix D: Guardian BERTopic cluster listing
+│   ├── topic_groups_au.csv              # Appendix C: AU thematic group definitions
+│   └── topic_groups_guardian.csv        # Appendix C: Guardian thematic group definitions
 │
 ├── requirements.txt
 └── README.md
