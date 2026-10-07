@@ -148,11 +148,7 @@ Extracts the top-N c-TF-IDF keywords for every BERTopic topic in both corpora an
 python scripts/report_topics.py
 ```
 
-Loads both sets of topic assignments, applies the manually defined 7-category harmonised taxonomy (configured in `config.py` via `HARMONIZED_COLORS` and the group-name mappings), and writes:
-- `data/topic_combined.csv` — all articles with harmonised group labels
-- `data/topic_alignment.csv` — cross-corpus Jaccard alignment table
-- `figures/fig4_topic_table.pdf` — topic summary table
-
+Loads both sets of topic assignments, applies the manually defined 7-category harmonised taxonomy 
 > **Manual step:** After running `build_topic_keywords.py`, inspect the keyword output and assign each BERTopic topic to one of the 7 harmonised categories. Record the mappings in the `AU_TO_HARMONIZED` and `G_TO_HARMONIZED` dicts in `config.py` before proceeding.
 
 ---
@@ -165,7 +161,7 @@ Loads both sets of topic assignments, applies the manually defined 7-category ha
 python scripts/outlet_topic_attention.py
 ```
 
-Computes whether each outlet devotes significantly more or less attention to each harmonised topic group than its corpus-level share would predict. Uses binomial z-scores and representation ratios *r*. Outputs to `data/australian-no-letters/` and `figures/`.
+Computes whether each outlet devotes significantly more or less attention to each harmonised topic group than its corpus-level share would predict. Uses binomial z-scores and representation ratios *r*. 
 
 **Cross-corpus outlet comparison**
 
@@ -185,9 +181,9 @@ python scripts/compare_corpora.py
 
 Two main analyses:
 
-1. **Cross-corpus co-occurrence** — for each harmonised topic group, identifies the top 10 c-TF-IDF keywords and computes the proportion of articles per era in which each keyword co-occurs with the group's primary signal. Outputs `figures/comparison/cooccurrence_heatmap.pdf`.
+1. **Cross-corpus co-occurrence** — for each harmonised topic group, identifies the top 10 c-TF-IDF keywords and computes the proportion of articles per era in which each keyword co-occurs with the group's primary signal. 
 
-2. **Temporal lines by outlet** — plots yearly topic-group share for each AU outlet individually alongside the *Guardian* mean, with a dotted AU mean line. Outputs `figures/comparison/temporal_lines_by_outlet.pdf`.
+2. **Temporal lines by outlet** — plots yearly topic-group share for each AU outlet individually alongside the *Guardian* mean.
 
 ---
 
@@ -197,7 +193,7 @@ Two main analyses:
 python scripts/temporal_comparison.py
 ```
 
-Produces era-level stacked bar charts and year-by-year topic share lines comparing the AU and Guardian corpora. Outputs to `figures/comparison/`.
+Produces era-level stacked bar charts and year-by-year topic share lines comparing the AU and Guardian corpora. 
 
 ---
 
