@@ -31,14 +31,14 @@ Relevance scoring scripts are included for transparency (see [Scoring](#1-releva
 1. score_and_classify.py        →  data/articles_scored_australian.csv
    guardian_build_scored.py     →  data/guardian/guardian_articles_scored.csv
 
-2. run_bertopic.py              →  data/australian-no-letters/topic_assignments.csv
+2. run_bertopic.py              →  data/australian/topic_assignments.csv
                                    data/guardian/topic_assignments_guardian.csv
 
 3. build_topic_keywords.py      →  topic_keywords.xlsx
 
 4. report_topics.py             →  data/topic_combined.csv
 
-5. outlet_topic_attention.py    →  data/australian-no-letters/outlet_binomial_zscores.csv
+5. outlet_topic_attention.py    →  data/australian/outlet_binomial_zscores.csv
    outlet_attention_comparison.py
    
 
@@ -108,12 +108,6 @@ python scripts/run_bertopic.py --corpus guardian
 
 Fits independent BERTopic models for each corpus using `nomic-embed-text-v1` (8,192-token context window), which encodes each article in full without truncation. Outlier articles are reassigned by cosine similarity to the nearest topic embedding.
 
-Outputs:
-- `data/australian-no-letters/topic_assignments.csv`
-- `data/australian-no-letters/topic_summary.csv`
-- `data/guardian/topic_assignments_guardian.csv`
-- `data/guardian/topic_summary_guardian.csv`
-- Saved models under `models/`
 
 Key options:
 
@@ -126,9 +120,8 @@ Key options:
 | `--outlier-strategy` | `embeddings` | Outlier reassignment method (`embeddings` or `c-tf-idf`) |
 | `--outlier-threshold` | `0.5` | Cosine similarity threshold for reassignment |
 | `--device` | `auto` | `cpu` or `cuda` |
-| `--exclude-letters` | — | Exclude letters-to-the-editor from topic modelling |
 
-> **Note:** The models were fitted on a GPU cluster. Embedding 9,863 AU articles + 5,171 Guardian articles with `nomic-embed-text-v1` at full context requires substantial RAM and benefits from a CUDA-capable GPU.
+> **Note:** The models were fitted on a GPU cluster. Embedding 9,863 AU articles + 9,976 Guardian articles with `nomic-embed-text-v1` at full context requires substantial RAM and benefits from a CUDA-capable GPU.
 
 ---
 
@@ -203,7 +196,7 @@ Produces era-level stacked bar charts and year-by-year topic share lines compari
 python scripts/cohesion_analysis.py
 ```
 
-`cohesion_analysis.py` computes the cosine similarity between each article's embedding and its assigned harmonised group centroid for both corpora, writing `data/australian-no-letters/cohesion_scores_aus.csv` and `data/guardian/cohesion_scores_guardian.csv`.
+`cohesion_analysis.py` computes the cosine similarity between each article's embedding and its assigned harmonised group centroid for both corpora.
 
 ---
 
