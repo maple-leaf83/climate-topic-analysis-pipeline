@@ -2,39 +2,26 @@
 run_bertopic.py
 BERTopic topic modelling pipeline for "A Climate of Opinion".
 
-Loads article body text from Guardian CSV and (optionally) NewsBank cache,
-fits BERTopic models (Guardian and/or Australian papers separately), and saves:
+Fits BERTopic models for the Guardian and/or Australian broadsheet corpora
+separately, and saves:
   - data/{corpus}/topic_assignments.csv   : per-article topic labels
   - data/{corpus}/topic_summary.csv       : topic label, size, keywords
-  - figures/{corpus}/fig3a_topics_over_time.pdf/png
-  - figures/{corpus}/fig3b_topics_by_pub.pdf/png
-  - figures/{corpus}/fig3c_topics_by_era.pdf/png
   - models/{corpus}/bertopic_model/       : serialised model
-  - data/topic_alignment.csv              : cross-corpus topic comparison (--corpus both)
 
 Usage:
-    python run_bertopic.py [--corpus guardian|australian|both|combined]
+    python run_bertopic.py [--corpus guardian|australian|both]
                           [--min-topic-size N]
                           [--au-min-topic-size N]
                           [--nr-topics N]
                           [--device cpu|cuda]
-                          [--transform-only [--source-model LABEL]]
 
 Options:
-    --corpus            Which corpus to run: guardian, australian, both, or combined (default: both)
+    --corpus            Which corpus to run: guardian, australian, or both (default: both)
     --min-topic-size N  Min articles per topic for Guardian corpus  (default: 50)
     --au-min-topic-size N  Min articles per topic for Australian corpus (default: 20)
     --nr-topics N       Reduce to N topics after fit (default: auto)
     --device cpu|cuda   Embedding device (default: auto-detect)
-    --transform-only    Project letters into an existing model using BERTopic.transform()
-                        rather than fitting a new model. Saves to data/letters/.
-    --source-model      Label of the saved model directory to load for --transform-only
-                        (default: combined-no-letters-no-aunews)
 
-Requirements:
-    pip install bertopic sentence-transformers umap-learn hdbscan scikit-learn
-    pip install pandas matplotlib numpy tqdm
-    Run cache_bodies.py once before this script to build the NewsBank body cache.
 """
 
 import os
@@ -42,10 +29,6 @@ import argparse
 import warnings
 from pathlib import Path
 
-# Redirect ALL HuggingFace/transformers cache away from ~/.cache
-# Must happen before any sentence_transformers / transformers imports.
-# Force-set rather than setdefault — cluster environments often pre-set HF_HOME
-# to ~/.cache/huggingface, which would point the modules cache to the wrong place.
 _REPO_ROOT = Path(__file__).resolve().parent
 _HF_CACHE  = str(_REPO_ROOT / "models" / "hf_cache")
 os.environ["HF_HUB_CACHE"]              = _HF_CACHE   # highest-priority cache var
@@ -165,7 +148,7 @@ def build_text_corpus(catalogue: pd.DataFrame, corpus: str,
                       exclude_au_news: bool = False) -> pd.DataFrame:
     """
     Return a DataFrame of included articles with 'body_text'.
-    corpus: 'guardian' | 'australian' | 'combined'
+    corpus: 'guardian' | 'australian' | 'both'
     exclude_letters: drop Letters content_type (Australian papers)
     exclude_au_news: drop Guardian Australia news section (keeps Opinion + Environment only)
 
@@ -198,9 +181,7 @@ def build_text_corpus(catalogue: pd.DataFrame, corpus: str,
         included = included[included["publication"].str.contains("Guardian", na=False)].copy()
     elif corpus == "australian":
         included = included[~included["publication"].str.contains("Guardian", na=False)].copy()
-    # combined: use all of included as-is
-
-    if exclude_au_news and corpus in ("guardian", "combined"):
+    if exclude_au_news and corpus == "guardian":
         before = len(included)
         included = included[
             ~(included["publication"].str.contains("Guardian", na=False) &
@@ -871,203 +852,6 @@ def fig_topics_over_time_milestones(topic_model, corpus_df: pd.DataFrame,
     return tot
 
 
-# ── Step 5: Transform-only — project held-out docs into an existing model ──────
-
-def transform_letters(catalogue: pd.DataFrame,
-                      source_label: str = "combined-no-letters-no-aunews",
-                      device: str = "auto",
-                      embedding_model_path: str = "nomic-ai/nomic-embed-text-v1",
-                      batch_size: int = 256,
-                      topic_model=None,
-                      outlier_strategy: str = "embeddings",
-                      outlier_threshold: float = 0.5,
-                      noise_sample_size: int = 100):
-    """
-    Project letters into the topic space of a previously fitted BERTopic model.
-
-    Rather than fitting a new model on the 317 letters, this uses
-    BERTopic.transform() so that letters are assigned to the same 51-topic space
-    as the main corpus.  This is the correct approach for the letters-vs-editorials
-    comparison: both document sets share one topic vocabulary.
-
-    Steps
-    -----
-    1. Load the saved model from models/{source_label}/bertopic_model/
-    2. Load Letters articles from the catalogue and NewsBank cache
-    3. Embed them with the same embedding model (fp16)
-    4. Call topic_model.transform(docs, embeddings=embeddings)
-    5. Reassign any outliers via c-TF-IDF similarity (threshold=0.0)
-    6. Save to data/letters/topic_assignments.csv
-
-    Usage
-    -----
-        python run_bertopic.py --transform-only \\
-            --source-model combined-no-letters-no-aunews \\
-            --embedding-model /path/to/nomic-embed-text-v1/snapshot
-    """
-    from bertopic import BERTopic
-    from sentence_transformers import SentenceTransformer
-    import torch
-
-    # ── Load the saved model (skip if already provided) ──────────────────────
-    if topic_model is None:
-        model_path = str(MODELS_DIR / source_label / "bertopic_model")
-        print(f"[transform] Loading model from {model_path} …")
-        topic_model = BERTopic.load(model_path)
-    print(f"[transform] Model ready — {len(topic_model.get_topic_info()) - 1} topics")
-
-    # ── Load letters ──────────────────────────────────────────────────────────
-    print("[transform] Loading letters corpus …")
-    if "final_status" in catalogue.columns:
-        letters = catalogue[catalogue["final_status"] == "Included-Letter"].copy()
-    else:
-        included = catalogue[catalogue["relevance"] == "Include"].copy()
-        letters  = included[included["content_type"] == "Letters"].copy()
-    print(f"[transform] {len(letters):,} letter articles in catalogue")
-
-    # Letters are from Australian papers only (NewsBank)
-    letters_nb = letters[~letters["publication"].str.contains("Guardian", na=False)].copy()
-    if "body" in letters_nb.columns:
-        nb_df = letters_nb.copy().rename(columns={"body": "body_text"})
-    else:
-        nb_df = load_newsbank_bodies(letters_nb)
-    nb_df = nb_df[nb_df["body_text"].notna() & (nb_df["body_text"].str.len() > 50)]
-    nb_df["era"] = nb_df["year"].apply(year_to_era)
-    print(f"[transform] {len(nb_df):,} letters with usable body text")
-
-    if nb_df.empty:
-        print("[transform] No letters found — check catalogue and body cache.")
-        return
-
-    docs = nb_df["body_text"].tolist()
-
-    # ── Embed letters ─────────────────────────────────────────────────────────
-    if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    print(f"[transform] Loading embedding model: {embedding_model_path}  (cache: {_HF_CACHE})")
-    embedding_model = SentenceTransformer(
-        embedding_model_path, device=device,
-        local_files_only=True,
-        model_kwargs={"torch_dtype": "float16"},
-        prompts={"clustering": "clustering: "},
-        default_prompt_name="clustering",
-    )
-
-    # Check for a cached letters embedding (convenient when rerunning)
-    letters_embed_cache = MODELS_DIR / source_label / "letters_embeddings_cache.npy"
-    embeddings = None
-    if letters_embed_cache.exists():
-        cached = np.load(str(letters_embed_cache))
-        if cached.shape[0] == len(docs):
-            print(f"[transform] Loading cached letter embeddings from {letters_embed_cache}")
-            embeddings = cached
-        else:
-            print(f"[transform] Cache shape {cached.shape} doesn't match "
-                  f"{len(docs):,} docs — re-embedding")
-    if embeddings is None:
-        print(f"[transform] Embedding {len(docs):,} letters "
-              f"(batch_size={batch_size}, fp16) …")
-        embeddings = embedding_model.encode(
-            docs, batch_size=batch_size, show_progress_bar=True,
-            convert_to_numpy=True,
-        )
-        np.save(str(letters_embed_cache), embeddings)
-        print(f"[transform] Letter embeddings saved to {letters_embed_cache}")
-
-    # ── Project into existing topic space ─────────────────────────────────────
-    print("[transform] Projecting letters into topic space …")
-    topics, probs = topic_model.transform(docs, embeddings=embeddings)
-    # Convert to a plain Python list of ints — some BERTopic versions fail in
-    # reduce_outliers when topics is a numpy array of numpy int64 values.
-    topics = [int(t) for t in topics]
-    n_outliers = sum(1 for t in topics if t == -1)
-    print(f"[transform] {n_outliers:,} outliers before reassignment "
-          f"({n_outliers/len(topics)*100:.1f}%)")
-
-    if n_outliers > 0:
-        topics = reduce_topic_outliers(topic_model, docs, topics,
-                                       strategy=outlier_strategy,
-                                       threshold=outlier_threshold,
-                                       embeddings=embeddings)
-
-    if noise_sample_size > 0:
-        data_dir, _, _ = _corpus_dirs("letters")
-        sample_noise_cluster(nb_df, topics,
-                             n_sample=noise_sample_size,
-                             data_dir=data_dir)
-
-    # ── Save assignments ──────────────────────────────────────────────────────
-    data_dir, _, _ = _corpus_dirs("letters")
-    save_topic_assignments(nb_df, topics, probs, data_dir)
-    print(f"[transform] Done. Letter topic assignments → data/letters/topic_assignments.csv")
-
-
-# ── Step 6: Cross-corpus topic alignment (validation) ─────────────────────────
-
-def align_topics(summary_g: pd.DataFrame, summary_au: pd.DataFrame) -> pd.DataFrame:
-    """
-    For each Guardian topic, find the best-matching Australian topic by
-    Jaccard similarity on top-10 keyword sets. Saves data/topic_alignment.csv.
-
-    A Jaccard score > 0.15 suggests meaningful thematic overlap; > 0.30 is strong.
-    """
-    print("[align] Computing cross-corpus topic alignment …")
-
-    def kw_set(rep_str):
-        """Parse keyword list from BERTopic representation string."""
-        if not isinstance(rep_str, str):
-            return set()
-        # Representation column is usually a list-like string: "['word1', 'word2', ...]"
-        import ast
-        try:
-            items = ast.literal_eval(rep_str)
-            return {str(w).lower().strip() for w in items}
-        except Exception:
-            return {w.strip().strip("'\"[]").lower()
-                    for w in rep_str.split(",")}
-
-    rows = []
-    g_topics = summary_g[summary_g["topic_id"] != -1].copy()
-    au_topics = summary_au[summary_au["topic_id"] != -1].copy()
-
-    for _, g_row in g_topics.iterrows():
-        g_kw = kw_set(g_row["keywords"])
-        best_j, best_id, best_label, best_au_kw = 0.0, None, "", ""
-        for _, au_row in au_topics.iterrows():
-            au_kw = kw_set(au_row["keywords"])
-            if not g_kw or not au_kw:
-                continue
-            j = len(g_kw & au_kw) / len(g_kw | au_kw)
-            if j > best_j:
-                best_j, best_id = j, au_row["topic_id"]
-                best_label = au_row["label"]
-                best_au_kw = au_row["keywords"]
-        rows.append({
-            "guardian_topic_id":    g_row["topic_id"],
-            "guardian_label":       g_row["label"],
-            "guardian_count":       g_row["count"],
-            "guardian_keywords":    g_row["keywords"],
-            "au_topic_id":          best_id,
-            "au_label":             best_label,
-            "au_keywords":          best_au_kw,
-            "jaccard_similarity":   round(best_j, 4),
-            "match_strength":       ("strong" if best_j >= 0.30
-                                     else "moderate" if best_j >= 0.15
-                                     else "weak"),
-        })
-
-    df_align = pd.DataFrame(rows).sort_values("jaccard_similarity", ascending=False)
-    _combined_dir = DATA_DIR / "combined"
-    _combined_dir.mkdir(exist_ok=True)
-    path = _combined_dir / "topic_alignment.csv"
-    df_align.to_csv(path, index=False)
-    print(f"[align] Alignment table → {path}")
-    strong = (df_align["match_strength"] == "strong").sum()
-    moderate = (df_align["match_strength"] == "moderate").sum()
-    print(f"  Strong matches (J≥0.30): {strong}  |  Moderate (J≥0.15): {moderate}")
-    return df_align
-
 
 # ── Run one corpus ────────────────────────────────────────────────────────────
 
@@ -1151,33 +935,27 @@ def main(corpus: str = "both", min_topic_size: int = 50,
          exclude_letters: bool = False, exclude_au_news: bool = False,
          embedding_model_path: str = "nomic-ai/nomic-embed-text-v1",
          batch_size: int = 256,
-         transform_only: bool = False,
-         source_model: str = "combined-no-letters-no-aunews",
          outlier_strategy: str = "embeddings",
          outlier_threshold: float = 0.5,
          noise_sample_size: int = 100,
          cohesion_sweep: bool = False,
          sweep_sizes: tuple = (30, 50, 75, 100, 125, 150)):
 
-    # guardian_relevant.csv — output of guardian_build_scored.py (v2, edition-tagged)
-    # Contains only relevance-filtered articles with body text inline.
-    guardian_relevant = DATA_DIR / "guardian" / "guardian_relevant.csv"
+    guardian_csv = GUARDIAN_CATALOGUE_CSV
 
-    # Guardian-only: skip the Australian catalogue entirely.
     if corpus == "guardian":
-        if not guardian_relevant.exists():
+        if not guardian_csv.exists():
             raise FileNotFoundError(
-                f"Guardian catalogue not found at {guardian_relevant}\n"
-                f"  Run: python guardian_build_scored.py  (from repo/)"
+                f"Guardian catalogue not found at {guardian_csv}\n"
+                f"  Run: python scripts/score_and_classify.py <input.csv> {guardian_csv}"
             )
-        print(f"[load] Guardian catalogue (only): {guardian_relevant}")
-        catalogue = pd.read_csv(guardian_relevant, low_memory=False)
+        print(f"[load] Guardian catalogue: {guardian_csv}")
+        catalogue = pd.read_csv(guardian_csv, low_memory=False)
         print(f"  {len(catalogue):,} articles loaded")
         if "edition" in catalogue.columns:
             print(f"  Edition breakdown:\n"
                   f"{catalogue['edition'].value_counts().to_string()}")
     else:
-        # Australian or combined: load the Australian catalogue first.
         if SCORED_CSV.exists():
             cat_path = SCORED_CSV
         elif CATALOGUE_CSV.exists():
@@ -1187,109 +965,48 @@ def main(corpus: str = "both", min_topic_size: int = 50,
                 f"No Australian catalogue found. Expected one of:\n"
                 f"  {SCORED_CSV}\n  {CATALOGUE_CSV}"
             )
-        print(f"[load] Catalogue: {cat_path}")
+        print(f"[load] Australian catalogue: {cat_path}")
         catalogue = pd.read_csv(cat_path, low_memory=False)
 
-        # Supplement with Guardian catalogue for modes that include Guardian articles.
-        if corpus in ("both", "combined"):
-            if guardian_relevant.exists():
-                g_cat = pd.read_csv(guardian_relevant, low_memory=False)
+        if corpus == "both":
+            if guardian_csv.exists():
+                g_cat = pd.read_csv(guardian_csv, low_memory=False)
                 catalogue = pd.concat([catalogue, g_cat], ignore_index=True)
                 print(f"[load] Guardian catalogue appended: {len(g_cat):,} articles "
                       f"→ combined total {len(catalogue):,}")
             else:
-                print(f"[warn] Guardian catalogue not found at {guardian_relevant}")
-                print(f"  Run: python guardian_build_scored.py  (from repo/)")
+                print(f"[warn] Guardian catalogue not found at {guardian_csv}")
 
     DATA_DIR.mkdir(exist_ok=True)
     FIGURES_DIR.mkdir(exist_ok=True)
     MODELS_DIR.mkdir(exist_ok=True)
 
-    # Transform-only mode: project letters into an existing model's topic space
-    if transform_only:
-        transform_letters(catalogue,
-                          source_label=source_model,
-                          device=device,
-                          embedding_model_path=embedding_model_path,
-                          batch_size=batch_size,
-                          outlier_strategy=outlier_strategy,
-                          outlier_threshold=outlier_threshold,
-                          noise_sample_size=noise_sample_size)
-        return
-
-    if corpus == "combined":
-        # Single model: Guardian opinion+analysis + all Australian opinion/analysis
-        summary, topic_model = run_corpus(
-            catalogue, "combined",
-            min_topic_size, nr_topics, device,
-            exclude_letters=exclude_letters,
-            exclude_au_news=exclude_au_news,
-            embedding_model_path=embedding_model_path,
-            batch_size=batch_size,
-            outlier_strategy=outlier_strategy,
-            outlier_threshold=outlier_threshold,
-            noise_sample_size=noise_sample_size,
-        )
-        _label = "combined"
-        if exclude_letters: _label += "-no-letters"
-        if exclude_au_news: _label += "-no-aunews"
-
-        # Free the embedding model from GPU before loading a second instance
-        # for letters encoding — both would otherwise sit on GPU simultaneously.
-        # topic_model.embedding_model is a BERTopic SentenceTransformerBackend wrapper;
-        # the actual torch model lives one level deeper at .embedding_model.
-        import torch
-        if hasattr(topic_model, "embedding_model") and topic_model.embedding_model is not None:
-            inner = getattr(topic_model.embedding_model, "embedding_model", None)
-            if inner is not None and hasattr(inner, "to"):
-                inner.to("cpu")
-            topic_model.embedding_model = None
-        torch.cuda.empty_cache()
-        print("[memory] Embedding model offloaded from GPU before letters transform.")
-
-        transform_letters(catalogue,
-                          source_label=_label,
-                          device=device,
-                          embedding_model_path=embedding_model_path,
-                          batch_size=batch_size,
-                          topic_model=topic_model,
-                          outlier_strategy=outlier_strategy,
-                          outlier_threshold=outlier_threshold,
-                          noise_sample_size=noise_sample_size)
-        print("\n[done] Combined pipeline complete.")
-        print(f"  Editorials → data/combined/   |   Letters → data/letters/")
-        return
-
     if corpus in ("guardian", "both"):
-        summary_g, _ = run_corpus(catalogue, "guardian",
-                                  min_topic_size, nr_topics, device,
-                                  exclude_au_news=exclude_au_news,
-                                  embedding_model_path=embedding_model_path,
-                                  batch_size=batch_size,
-                                  outlier_strategy=outlier_strategy,
-                                  outlier_threshold=outlier_threshold,
-                                  noise_sample_size=noise_sample_size,
-                                  cohesion_sweep=cohesion_sweep,
-                                  sweep_sizes=sweep_sizes)
+        run_corpus(catalogue, "guardian",
+                   min_topic_size, nr_topics, device,
+                   exclude_au_news=exclude_au_news,
+                   embedding_model_path=embedding_model_path,
+                   batch_size=batch_size,
+                   outlier_strategy=outlier_strategy,
+                   outlier_threshold=outlier_threshold,
+                   noise_sample_size=noise_sample_size,
+                   cohesion_sweep=cohesion_sweep,
+                   sweep_sizes=sweep_sizes)
 
     if corpus in ("australian", "both"):
-        summary_au, _ = run_corpus(catalogue, "australian",
-                                   au_min_topic_size, nr_topics, device,
-                                   exclude_letters=exclude_letters,
-                                   embedding_model_path=embedding_model_path,
-                                   batch_size=batch_size,
-                                   outlier_strategy=outlier_strategy,
-                                   outlier_threshold=outlier_threshold,
-                                   noise_sample_size=noise_sample_size,
-                                   cohesion_sweep=cohesion_sweep,
-                                   sweep_sizes=sweep_sizes)
-
-    if corpus == "both":
-        align_topics(summary_g, summary_au)
+        run_corpus(catalogue, "australian",
+                   au_min_topic_size, nr_topics, device,
+                   exclude_letters=exclude_letters,
+                   embedding_model_path=embedding_model_path,
+                   batch_size=batch_size,
+                   outlier_strategy=outlier_strategy,
+                   outlier_threshold=outlier_threshold,
+                   noise_sample_size=noise_sample_size,
+                   cohesion_sweep=cohesion_sweep,
+                   sweep_sizes=sweep_sizes)
 
     print("\n[done] Pipeline complete.")
-    print(f"  Outputs in data/guardian/ and data/australian/")
-    print(f"  Alignment → data/topic_alignment.csv")
+    print(f"  Outputs in data/guardian/ and data/australian-no-letters/")
 
 
 if __name__ == "__main__":
@@ -1297,9 +1014,9 @@ if __name__ == "__main__":
         description="BERTopic pipeline — Guardian vs Australian papers"
     )
     parser.add_argument(
-        "--corpus", choices=["guardian", "australian", "both", "combined"],
+        "--corpus", choices=["guardian", "australian", "both"],
         default="both",
-        help="Which corpus to run. 'combined' fits one model on all opinion/analysis.",
+        help="Which corpus to run: guardian, australian, or both (default: both).",
     )
     
     parser.add_argument(
@@ -1337,23 +1054,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch-size", type=int, default=256, metavar="N",
         help="Embedding batch size (default: 256). Reduce if OOM; raise if GPU has headroom.",
-    )
-    parser.add_argument(
-        "--transform-only", action="store_true",
-        help=(
-            "Project letters into an existing fitted model's topic space using "
-            "BERTopic.transform() rather than fitting a new model. "
-            "Outputs to data/letters/topic_assignments.csv. "
-            "Use --source-model to specify which saved model to load."
-        ),
-    )
-    parser.add_argument(
-        "--source-model", default="combined-no-letters-no-aunews", metavar="LABEL",
-        help=(
-            "Label of the saved model to load for --transform-only mode. "
-            "Must match the folder name under models/. "
-            "Default: combined-no-letters-no-aunews"
-        ),
     )
     parser.add_argument(
         "--outlier-strategy", default="embeddings",
@@ -1405,8 +1105,6 @@ if __name__ == "__main__":
         exclude_letters=args.exclude_letters,
         embedding_model_path=args.embedding_model,
         batch_size=args.batch_size,
-        transform_only=args.transform_only,
-        source_model=args.source_model,
         outlier_strategy=args.outlier_strategy,
         outlier_threshold=args.outlier_threshold,
         noise_sample_size=args.noise_sample_size,

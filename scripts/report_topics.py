@@ -3,8 +3,6 @@ report_topics.py
 Combines Guardian and Australian topic assignments into a unified report:
   - data/topic_combined.csv          : all articles, unified topic labels
   - data/topic_alignment.csv         : cross-corpus Jaccard alignment
-  - figures/fig4_topic_table.pdf     : 4-column topic summary table
-  - figures/fig5_top10_by_pub.pdf    : horizontal bar chart, top-10 topics by publication
 
 Usage:
     python report_topics.py

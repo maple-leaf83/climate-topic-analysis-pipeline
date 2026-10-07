@@ -113,29 +113,60 @@ def score_articles(df: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    # Quick smoke-test on a toy dataframe
-    sample = pd.DataFrame([
-        {
-            "title": "Business approach to the carbon tax",
-            "body":  "The carbon tax and carbon pricing debate continues. "
-                     "Carbon pricing mechanisms and emissions trading dominate. "
-                     "The Paris Agreement underpins climate policy.",
-        },
-        {
-            "title": "Local council budget approved",
-            "body":  "The council approved its annual budget with no mention "
-                     "of environmental issues.",
-        },
-        {
-            "title": "Climate change threatens reef",
-            "body":  "Scientists warn about impacts.",
-        },
-        {
-            "title": "Net zero by 2050",
-            "body":  "Australia's net zero target requires net-zero emissions "
-                     "across all sectors by 2050.",
-        },
-    ])
-    result = score_articles(sample)
-    print(result[["title", "cc_count", "gw_count", "cg_total",
-                  "climate_mentions", "title_hit", "relevance"]])
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Score a CSV of articles for climate relevance and apply the "
+            "hybrid inclusion criterion. Adds columns: cc_count, gw_count, "
+            "cg_total, climate_mentions, title_hit, relevance."
+        )
+    )
+    parser.add_argument("input",  help="Path to input CSV file")
+    parser.add_argument("output", help="Path to write scored CSV file")
+    parser.add_argument(
+        "--title-col", default="title", metavar="COL",
+        help="Column name for article title (default: title)",
+    )
+    parser.add_argument(
+        "--body-col", default="body", metavar="COL",
+        help="Column name for article body text (default: body)",
+    )
+    parser.add_argument(
+        "--include-only", action="store_true",
+        help="Write only articles that pass the inclusion criterion",
+    )
+    args = parser.parse_args()
+
+    print(f"Reading {args.input} …")
+    df = pd.read_csv(args.input, low_memory=False)
+
+    # Rename non-standard column names to the expected 'title' / 'body'
+    rename = {}
+    if args.title_col != "title":
+        rename[args.title_col] = "title"
+    if args.body_col != "body":
+        rename[args.body_col] = "body"
+    if rename:
+        df = df.rename(columns=rename)
+
+    missing = [c for c in ("title", "body") if c not in df.columns]
+    if missing:
+        print(f"Error: column(s) not found in input: {missing}", file=sys.stderr)
+        print(f"Available columns: {list(df.columns)}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Scoring {len(df):,} articles …")
+    result = score_articles(df)
+
+    if args.include_only:
+        before = len(result)
+        result = result[result["relevance"] == "Include"]
+        print(f"Retained {len(result):,} / {before:,} articles after inclusion criterion")
+    else:
+        n_include = (result["relevance"] == "Include").sum()
+        print(f"Include: {n_include:,}  |  Exclude: {len(result) - n_include:,}")
+
+    result.to_csv(args.output, index=False)
+    print(f"Written to {args.output}")

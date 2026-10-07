@@ -5,11 +5,11 @@ Extracts the top-N c-TF-IDF keywords for every BERTopic topic in the
 combined corpus and writes them to a formatted Excel workbook.
 
 Sources:
-  models/combined-no-letters-no-aunews/bertopic_model/ctfidf.safetensors
+  models/bertopic_model/ctfidf.safetensors
       Sparse CSR matrix (67 topics × 193,756 vocab terms).
       Row i in the matrix corresponds to topic_id = i - 1
         (row 0 = outlier topic -1 / noise; row 1 = topic 0, etc.)
-  models/combined-no-letters-no-aunews/bertopic_model/ctfidf_config.json
+  models/bertopic_model/ctfidf_config.json
       Contains the CountVectorizer vocabulary (word → column index).
   data/combined/topic_summary.csv
       topic_id, label, count, Group — used for display names and grouping.

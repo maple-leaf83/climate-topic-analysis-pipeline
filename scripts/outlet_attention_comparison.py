@@ -295,10 +295,10 @@ def draw_dotplot(ratio: pd.DataFrame, z: pd.DataFrame,
         warnings.simplefilter("ignore")
         plt.tight_layout()
 
-    for ext in (".pdf", ".png"):
+    for ext in (".pdf"):
         fig.savefig(str(out_stem.with_suffix(ext)), bbox_inches="tight", dpi=150)
     plt.close()
-    print(f"  → {out_stem.name}.pdf/.png")
+    print(f"  → {out_stem.name}.pdf")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -350,10 +350,10 @@ def pub_share_matrix(df: pd.DataFrame, group_col: str, group_order: list[str],
     fig.colorbar(im, cax=cax, label="% of outlet's articles")
     fig.tight_layout()
 
-    for ext in (".pdf", ".png"):
+    for ext in (".pdf"):
         fig.savefig(str(out_stem.with_suffix(ext)), bbox_inches="tight", dpi=150)
     plt.close()
-    print(f"  → {out_stem.name}.pdf/.png")
+    print(f"  → {out_stem.name}.pdf")
 
     if csv_path:
         matrix.round(1).to_csv(csv_path)

@@ -5,7 +5,7 @@ Edit paths here; all other scripts import from this module.
 
 from pathlib import Path
 
-# ── Colorblind-safe palette (Okabe-Ito / Wong 2011) ───────────────────────────
+# ── Colorblind-safe palette
 # Use these constants in ALL plotting scripts so figures are consistent.
 OKABE_ITO = {
     "blue":          "#0072B2",
@@ -99,18 +99,4 @@ CORE_CLIMATE_PHRASES = [
 CC_CORE_THRESHOLD          = 3   # formerly CC_GW_THRESHOLD (value unchanged)
 CLIMATE_MENTIONS_THRESHOLD = 3
 
-# ── CT columnist names (for auto-classification) ───────────────────────────────
-CT_COLUMNISTS = {
-    "jack waterford", "john hewson", "crispin hull", "ebony bennett",
-    "nicholas stuart", "michelle grattan", "john warhurst", "mark kenny",
-    "adam triggs",
-}
 
-# ── The Australian columnist names (for auto-classification of Inquirer folders) ──
-THE_AUSTRALIAN_COLUMNISTS = {
-    "paul kelly", "chris kenny", "janet albrechtsen", "greg sheridan",
-    "dennis shanahan", "gerard henderson", "bjorn lomborg", "peter van onselen",
-    "troy bramston", "nick cater", "tom dusevic", "graham lloyd",
-    "judith sloan", "adam creighton", "christopher pearson", "piers akerman",
-    "james jeffrey", "gemma tognini", "rowan callick",
-}

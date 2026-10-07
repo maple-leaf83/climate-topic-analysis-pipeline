@@ -29,16 +29,14 @@ Relevance scoring scripts are included for transparency (see [Scoring](#1-releva
 
 ```
 1. score_and_classify.py        →  data/articles_scored_australian.csv
-   guardian_build_scored.py     →  data/guardian/guardian_articles_scored.csv
+                                   data/guardian/guardian_articles_scored.csv
 
 2. run_bertopic.py              →  data/australian/topic_assignments.csv
                                    data/guardian/topic_assignments_guardian.csv
 
 3. build_topic_keywords.py      →  topic_keywords.xlsx
 
-4. report_topics.py             →  data/topic_combined.csv
-
-5. outlet_topic_attention.py    →  data/australian/outlet_binomial_zscores.csv
+4. outlet_topic_attention.py    →  data/australian/outlet_binomial_zscores.csv
    outlet_attention_comparison.py
    
 
@@ -49,8 +47,6 @@ Relevance scoring scripts are included for transparency (see [Scoring](#1-releva
 8. cohesion_analysis.py         →  data/*/cohesion_scores_*.csv
                                 →  figures/cohesion/
 
-9. make_prisma.py               →  figures/fig1_prisma.pdf
-   make_prisma_guardian.py      →  figures/fig_prisma_guardian.pdf
 ```
 
 ---
@@ -73,29 +69,24 @@ Edit `scripts/config.py` to set any local embedding model paths if running offli
 
 ### 1. Relevance scoring
 
-**Australian corpus**
+`score_and_classify.py` is a general-purpose CLI that works on any article CSV. Run it separately for each corpus:
 
 ```bash
-python scripts/score_and_classify.py
+python scripts/score_and_classify.py input.csv output.csv
+python scripts/score_and_classify.py input.csv output.csv --include-only
 ```
 
-Applies the hybrid relevance criterion to raw article CSVs and writes `data/articles_scored_australian.csv`. An article is included if any of the following hold:
+Use `--title-col` and `--body-col` if your CSV uses different column names (defaults: `title`, `body`). The `--include-only` flag writes only articles that pass the criterion.
 
-| Condition | Rule                                                 |
-|---|------------------------------------------------------|
-| (a) High direct frequency | `cc_count + gw_count ≥ 3`                            |
-| (b) Title hit | Title contains "climate change" or "global warming"  |
-| (c) Broad climate vocabulary | `cc_count + gw_count ≥ 1` AND `climate_mentions ≥ 3` |
+An article is included if any of the following hold:
 
-`climate_mentions` counts occurrences of any term in the 47-term `CLIMATE_TERMS` vocabulary defined in `config.py`.
+| Condition | Rule |
+|---|---|
+| (a) High direct frequency | Any `CORE_CLIMATE_PHRASE` appears ≥ 3 times in body |
+| (b) Title hit | Any `CORE_CLIMATE_PHRASE` appears in the title |
+| (c) Broad climate vocabulary | Any `CORE_CLIMATE_PHRASE` appears ≥ 1 time AND `climate_mentions ≥ 3` |
 
-**Guardian corpus**
-
-```bash
-python scripts/guardian_build_scored.py
-```
-
-Applies equivalent relevance screening to the Guardian article CSV and writes `data/guardian/guardian_articles_scored.csv`.
+`climate_mentions` counts occurrences of any term in the `CLIMATE_TERMS` vocabulary defined in `config.py`. `CORE_CLIMATE_PHRASES` covers canonical identifiers, contemporary equivalents, scientific mechanisms, and policy terms (also in `config.py`).
 
 ---
 
@@ -135,14 +126,9 @@ Extracts the top-N c-TF-IDF keywords for every BERTopic topic in both corpora an
 
 ---
 
-### 4. Topic reporting and taxonomy harmonisation
+### 4. Taxonomy harmonisation (manual step)
 
-```bash
-python scripts/report_topics.py
-```
-
-Loads both sets of topic assignments, applies the manually defined 7-category harmonised taxonomy 
-> **Manual step:** After running `build_topic_keywords.py`, inspect the keyword output and assign each BERTopic topic to one of the 7 harmonised categories. Record the mappings in the `AU_TO_HARMONIZED` and `G_TO_HARMONIZED` dicts in `config.py` before proceeding.
+After running `build_topic_keywords.py`, inspect the keyword output and assign each BERTopic topic to one of the 7 harmonised categories. Record the mappings in the `AU_TO_HARMONIZED` and `G_TO_HARMONIZED` dicts in `config.py` before proceeding to the analysis steps below.
 
 ---
 

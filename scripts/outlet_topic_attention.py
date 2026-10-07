@@ -21,9 +21,9 @@ Usage:
     python outlet_topic_attention.py
 
 Outputs (written relative to repo root via config.py):
-  data/australian-no-letters/outlet_observed_counts.csv
-  data/australian-no-letters/outlet_representation_ratios.csv
-  data/australian-no-letters/outlet_binomial_zscores.csv
+  outlet_observed_counts.csv
+  outlet_representation_ratios.csv
+  outlet_binomial_zscores.csv
   figures/cluster_analysis/outlet_topic_attention_heatmap.pdf
   figures/cluster_analysis/outlet_topic_attention_dotplot.pdf
 """
@@ -282,7 +282,6 @@ with warnings.catch_warnings():
     plt.tight_layout()
 
 fig2.savefig(str(FIG_DIR / "outlet_topic_attention_dotplot.pdf"), bbox_inches="tight", dpi=300)
-fig2.savefig(str(FIG_DIR / "outlet_topic_attention_dotplot.png"), bbox_inches="tight", dpi=150)
 plt.close()
 print(f"Dot plot  → outlet_topic_attention_dotplot.pdf")
 print(f"Font used: {FONT}")
@@ -333,7 +332,6 @@ fig3.colorbar(im3, cax=cax3, label="% of outlet's articles")
 
 fig3.tight_layout()
 fig3.savefig(str(FIG_DIR / "pub_share_matrix.pdf"), bbox_inches="tight", dpi=300)
-fig3.savefig(str(FIG_DIR / "pub_share_matrix.png"), bbox_inches="tight", dpi=150)
 plt.close()
 matrix.round(1).to_csv(OUT_DIR / "pub_share_matrix.csv")
 print(f"\nPub share matrix → pub_share_matrix.pdf")
