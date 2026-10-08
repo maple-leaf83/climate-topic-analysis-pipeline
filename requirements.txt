@@ -1,9 +1,3 @@
-# Python dependencies for "A Climate of Opinion" corpus pipeline
-# Install with: pip install -r requirements.txt
-#
-# System dependency (not pip):
-#   Ubuntu/Debian: sudo apt install poppler-utils
-#   macOS:         brew install poppler
 
 # ── Core pipeline ──────────────────────────────────────────────────────────────
 pandas>=2.0
